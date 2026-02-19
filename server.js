@@ -6,6 +6,7 @@ const connectDB = require("./config/db");
 const http = require("http");
 const { Server } = require("socket.io");
 const taskStatusRoutes = require('./routes/taskStatusRoutes');
+const path = require('path');
 
 dotenv.config();
 connectDB();
@@ -61,6 +62,7 @@ app.use("/api/roles", require("./routes/roleRoutes"));
 app.use("/api/tasks", require("./routes/taskRoutes"));
 app.use("/api/permissions", require("./routes/permissionRoutes"));
 app.use('/api/task-statuses', taskStatusRoutes);
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // ---------------- START SERVER ----------------
 const PORT = process.env.PORT || 5000;
