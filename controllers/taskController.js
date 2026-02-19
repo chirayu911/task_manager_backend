@@ -44,7 +44,7 @@ const createTask = async (req, res) => {
     });
 
     if (assignedTo) {
-      const staffMember = await User.findById(assignedTo);
+      const staffMember =  User.findById(assignedTo);
       if (staffMember?.email) sendTaskEmail(staffMember.email, staffMember.name, title);
     }
 

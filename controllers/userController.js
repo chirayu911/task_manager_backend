@@ -29,7 +29,7 @@ const loginUser = asyncHandler(async (req, res) => {
 
   if (!user || !(await bcrypt.compare(password, user.password))) {
     res.status(401);
-    throw new Error('Invalid username or password');
+    throw new Error('Invalid email or password');
   }
 
   const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '30d' });

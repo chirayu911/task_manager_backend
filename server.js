@@ -15,10 +15,24 @@ connectDB();
 const app = express();
 const server = http.createServer(app);
 
+// ⭐ Define Allowed Origins (Add your Dev Tunnel URL here)
+const allowedOrigins = [
+  "http://localhost:3000",
+  "https://fm8bp5cj-3000.inc1.devtunnels.ms"
+];
+
 // ---------------- SOCKET.IO ----------------
 const io = new Server(server, {
   cors: {
-    origin: "http://localhost:3000",
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps)
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS for Socket.io"));
+      }
+    },
+    methods: ["GET", "POST"],
     credentials: true,
   },
 });
@@ -45,15 +59,22 @@ io.on("connection", (socket) => {
 });
 
 // ---------------- MIDDLEWARE ----------------
+// ⭐ Updated CORS Middleware
 app.use(cors({
-  origin: "http://localhost:3000",
+  origin: (origin, callback) => {
+    // Check if origin is in our allowed list
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
   credentials: true,
 }));
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
-
 
 // ---------------- ROUTES ----------------
 app.use("/api/auth", require("./routes/authRoutes"));

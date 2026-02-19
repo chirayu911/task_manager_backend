@@ -1,127 +1,84 @@
-const User = require("../models/User");
-const Role = require("../models/Role");
-const jwt = require("jsonwebtoken");
-const bcrypt = require("bcryptjs");
+const User = require('../models/User');
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
 
-// ================= TOKEN GENERATION =================
 /**
- * Generates a JWT valid for 30 days
- */
-const generateToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET, {
-    expiresIn: "30d",
-  });
-};
-
-// ================= LOGIN USER =================
-/**
- * Authenticates user and returns populated role/permission data
+ * @desc    Authenticate User & get token
+ * @route   POST /api/auth/login
+ * @access  Public
  */
 const loginUser = async (req, res) => {
-  const { username, password } = req.body;
-
   try {
-    // Deep populate to get the Permission objects hidden inside the Role
-    const user = await User.findOne({ username }).populate({
-      path: "role",
-      populate: { 
-        path: "permissions",
-        select: "value" // Only fetch the slug (e.g., 'tasks_read') to save time
-      }
-    });
+    const { username, password } = req.body; // ⭐ Ensure frontend sends 'email'
+
+    // 1. Check if user exists
+    const user = await User.findOne({ username });
 
     if (!user) {
-      return res.status(401).json({ message: "Invalid credentials" });
+      console.warn(`Login attempt failed: User with username ${username} not found.`);
+      return res.status(401).json({ message: 'Invalid username or password' });
     }
 
+    // 2. Compare Passwords using Bcrypt
+    // ⭐ Important: user.password is the hashed string from DB
     const isMatch = await bcrypt.compare(password, user.password);
+
     if (!isMatch) {
-      return res.status(401).json({ message: "Invalid credentials" });
+      console.warn(`Login attempt failed: Incorrect password for ${username}.`);
+      return res.status(401).json({ message: 'Invalid email or password' });
     }
 
-    const token = generateToken(user._id);
+    // 3. Generate JWT Token
+    const token = jwt.sign(
+      { id: user._id }, 
+      process.env.JWT_SECRET, 
+      { expiresIn: '30d' }
+    );
 
-    // Set HTTP-Only cookie for security
-    res.cookie("jwt", token, {
+    // 4. Set HTTP-Only Cookie
+    res.cookie('token', token, {
       httpOnly: true,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
-      maxAge: 30 * 24 * 60 * 60 * 1000,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'none',
+      maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
     });
 
-    // Map permissions to a flat array of strings for fast frontend checks
-    const permissions =
-      user.role?.name === "admin"
-        ? ["*"]
-        : user.role?.permissions?.map(p => p.value) || [];
-
+    // 5. Return user data (excluding password)
     res.json({
       _id: user._id,
       name: user.name,
       email: user.email,
-      username: user.username,
-      role: user.role?.name || "staff",
-      permissions,
+      role: user.role
     });
 
-  } catch (err) {
-    console.error("Login Error:", err);
-    res.status(500).json({ message: "Server Error" });
+  } catch (error) {
+    console.error("Login Controller Error:", error);
+    res.status(500).json({ message: 'Server Error' });
   }
 };
 
-// ================= GET ME (SESSION CHECK) =================
 /**
- * Validates existing session and refreshes user data
+ * @desc    Get current user profile
+ * @route   GET /api/auth/me
+ * @access  Private
  */
 const getMe = async (req, res) => {
   try {
-    // Re-populate permissions on every "me" check to reflect admin changes immediately
-    const user = await User.findById(req.user.id)
-      .populate({
-        path: "role",
-        populate: { 
-          path: "permissions",
-          select: "value" 
-        }
-      })
-      .select("-password");
-
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    const permissions =
-      user.role?.name === "admin"
-        ? ["*"]
-        : user.role?.permissions?.map(p => p.value) || [];
-
-    res.json({
-      _id: user._id,
-      name: user.name,
-      email: user.email,
-      username: user.username,
-      role: user.role?.name || "staff",
-      permissions,
-    });
-
-  } catch (err) {
-    console.error("GetMe Error:", err);
-    res.status(500).json({ message: "Server Error" });
+    const user = await User.findById(req.user.id).select('-password');
+    res.json(user);
+  } catch (error) {
+    res.status(500).json({ message: 'Server Error' });
   }
 };
 
-// ================= LOGOUT USER =================
-const logoutUser = (req, res) => {
-  res.cookie("jwt", "", {
-    httpOnly: true,
-    expires: new Date(0),
-  });
-  res.json({ message: "Logged out" });
+/**
+ * @desc    Logout user / clear cookie
+ * @route   POST /api/auth/logout
+ * @access  Private
+ */
+const logout = (req, res) => {
+  res.cookie('token', '', { httpOnly: true, expires: new Date(0) });
+  res.json({ message: 'Logged out successfully' });
 };
 
-module.exports = {
-  loginUser,
-  logoutUser,
-  getMe,
-};
+module.exports = { loginUser, getMe, logout };
