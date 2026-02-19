@@ -1,6 +1,6 @@
 const Task = require('../models/Task');
 const User = require('../models/User');
-const sendTaskEmail = require('../utils/sendEmail');
+const sendTaskEmail = require('../utils/sendAssignEmail');
 
 // @desc    Get all tasks
 const getTasks = async (req, res) => {
