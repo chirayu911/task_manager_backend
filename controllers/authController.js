@@ -76,9 +76,15 @@ const getMe = async (req, res) => {
  * @route   POST /api/auth/logout
  * @access  Private
  */
-const logout = (req, res) => {
-  res.cookie('token', '', { httpOnly: true, expires: new Date(0) });
-  res.json({ message: 'Logged out successfully' });
+// Backend Sign-out Route
+export const logout = (req, res) => {
+  res.cookie('token', '', {
+    httpOnly: true,
+    expires: new Date(0), // Expire the cookie immediately
+    secure: true,        // Required for Dev Tunnels
+    sameSite: 'none',    // Required for cross-origin Dev Tunnels
+  });
+  res.status(200).json({ message: "Logged out successfully" });
 };
 
 module.exports = { loginUser, getMe, logout };

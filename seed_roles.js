@@ -45,9 +45,7 @@ const seed = async () => {
     ];
 
     await Role.insertMany(roles);
-    console.log("✅ Created Roles: Admin & Staff");
-
-    console.log("🎉 Seeding Complete!");
+   
     process.exit();
   } catch (err) {
     console.error("❌ Error:", err);

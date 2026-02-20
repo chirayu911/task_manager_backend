@@ -16,7 +16,6 @@ const seedMatrix = async () => {
     console.log("🧹 Cleared old Roles and Permissions.");
 
     // 2. Define Resources and Actions
-    // These 'values' MUST match the strings used in Sidebar.jsx and checkPermission.js logic
     const resources = ['tasks', 'staff', 'roles'];
     const actions = ['read', 'create', 'update', 'delete'];
     
@@ -35,15 +34,12 @@ const seedMatrix = async () => {
 
     // Insert all generated permissions into the DB
     const createdPerms = await Permission.insertMany(allPerms);
-    console.log(`✅ Created ${createdPerms.length} permissions.`);
+    (`✅ Created ${createdPerms.length} permissions.`);
 
     // 4. Create Roles and Assign Permissions
     
-    // Admin: Gets EVERY permission created above
     const adminPerms = createdPerms.map(p => p._id);
     
-    // Staff: Define exactly what staff can see
-    // To make features show on the sidebar for staff, they MUST have the 'read' permission for that resource
     const staffPerms = createdPerms.filter(p => 
         (p.value.startsWith('tasks_') && !p.value.includes('delete')) || // Staff: Create/Read/Update Tasks
         (p.value === 'staff_read') // Staff: Can see the Staff List but not Edit/Delete
@@ -63,7 +59,7 @@ const seedMatrix = async () => {
     ]);
 
     console.log("✅ Roles 'admin' and 'staff' seeded successfully.");
-    console.log("🎉 Seeding Complete! Remember to logout and login again to refresh your session.");
+    
     process.exit();
   } catch (err) {
     console.error("❌ Seeding Error:", err);

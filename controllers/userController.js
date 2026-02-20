@@ -143,7 +143,7 @@ const registerUser = asyncHandler(async (req, res) => {
     // We wrap this separately so an SMTP error doesn't trigger the global catch
     try {
       if (typeof sendWelcomeEmail === 'function') {
-        await sendWelcomeEmail(user.email, user.name, user.username, plainPassword);
+       sendWelcomeEmail(user.email, user.name, user.username, plainPassword);
         console.log(`✅ Welcome email sent to ${user.email}`);
       }
     } catch (emailErr) {

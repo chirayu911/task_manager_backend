@@ -12,8 +12,6 @@ const seedAdmin = async () => {
   try {
     await connectDB();
 
-    console.log("🔍 Checking admin role...");
-
     // 1️⃣ Ensure admin role exists
     let adminRole = await Role.findOne({ name: "admin" });
 
@@ -27,8 +25,6 @@ const seedAdmin = async () => {
     } else {
       console.log("✅ Admin role exists");
     }
-
-    console.log("🔍 Checking admin user...");
 
     // 2️⃣ Check admin user by username (safer)
     const adminExists = await User.findOne({ username: "admin" });

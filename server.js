@@ -17,8 +17,8 @@ const server = http.createServer(app);
 
 // ⭐ Define Allowed Origins (Add your Dev Tunnel URL here)
 const allowedOrigins = [
-  // "http://localhost:3000",
-  "https://fm8bp5cj-3000.inc1.devtunnels.ms"
+  "https://fm8bp5cj-3000.inc1.devtunnels.ms",
+  "http://localhost:3000"
 ];
 
 // ---------------- SOCKET.IO ----------------

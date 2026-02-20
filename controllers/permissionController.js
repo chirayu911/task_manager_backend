@@ -51,8 +51,7 @@ const createPermission = asyncHandler(async (req, res) => {
 // @desc    Update a permission
 // @route   PUT /api/permissions/:id
 const updatePermission = asyncHandler(async (req, res) => {
-  
-  console.log("REQ" , req.body);
+
   
   const permission = await Permission.findById(req.params.id);
 

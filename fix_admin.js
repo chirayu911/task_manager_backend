@@ -29,8 +29,8 @@ const fixAdmin = async () => {
     adminRole.permissions = allPermIds;
     await adminRole.save();
 
-    console.log("✅ SUCCESS: Admin role now has ALL permissions.");
-    console.log("👉 PLEASE LOGOUT AND LOG BACK IN (or Refresh) to see changes.");
+    ("✅ SUCCESS: Admin role now has ALL permissions.");
+
     
     process.exit();
   } catch (err) {

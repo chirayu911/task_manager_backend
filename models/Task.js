@@ -6,14 +6,20 @@ const taskSchema = new mongoose.Schema({
     required: [true, 'Please add a task title'],
     trim: true
   },
+  // ⭐ Added: Multi-line description for task details
+  description: {
+    type: String,
+    trim: true,
+    default: ''
+  },
   status: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'TaskStatus', // References the TaskStatus collection
+    ref: 'TaskStatus', 
     required: true
   },
   assignedTo: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'User', // References the User collection
+    ref: 'User', 
     default: null
   },
   // ⭐ Array of strings for multiple image paths
@@ -22,10 +28,17 @@ const taskSchema = new mongoose.Schema({
       type: String
     }
   ],
-  // ⭐ Updated: Array of strings for multiple video paths
-  video: [
+  // ⭐ Updated: Renamed to 'videos' (plural) to match frontend FormData
+  videos: [
     {
       type: String
+    }
+  ],
+  // ⭐ Added: Track which users were mentioned in the description
+  mentionedUsers: [
+    {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
     }
   ],
   createdBy: {
@@ -33,7 +46,7 @@ const taskSchema = new mongoose.Schema({
     ref: 'User'
   }
 }, {
-  timestamps: true // Tracks createdAt and updatedAt automatically
+  timestamps: true 
 });
 
 module.exports = mongoose.model('Task', taskSchema);
