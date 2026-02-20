@@ -1,9 +1,9 @@
 const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs'); // ⭐ Added missing import
 
 /**
  * User Model
- * The 'role' field stores a string (e.g., 'admin', 'staff') which 
- * corresponds to the 'name' field in the Role collection.
+ * The 'role' field stores an ObjectId referencing the Role collection.
  */
 const userSchema = mongoose.Schema({
   name: { 
@@ -25,7 +25,7 @@ const userSchema = mongoose.Schema({
     required: true 
   },
   role: { 
-    type:mongoose.Schema.Types.ObjectId , 
+    type: mongoose.Schema.Types.ObjectId, 
     ref: 'Role', // Reference to Role collection
   },
   status: { 
@@ -36,9 +36,11 @@ const userSchema = mongoose.Schema({
   timestamps: true 
 });
 
-
+// Middleware to hash password before saving
 userSchema.pre('save', async function(next) {
   if (!this.isModified('password')) return next();
+  
+  // Use bcrypt here now that it is defined at the top
   const salt = await bcrypt.genSalt(10);
   this.password = await bcrypt.hash(this.password, salt);
   next();
