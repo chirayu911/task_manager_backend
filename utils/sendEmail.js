@@ -49,8 +49,7 @@ const sendWelcomeEmail = async (email, name, username, password) => {
 
             <div style="border-top: 1px solid #f3f4f6; padding-top: 20px;">
               <p style="color: #9ca3af; font-size: 12px; text-align: center;">
-                <strong>Security Note:</strong> Please change your password immediately after your first login.<br/>
-                If you didn't expect this email, please contact IT support.
+                <strong>Security
               </p>
             </div>
           </div>

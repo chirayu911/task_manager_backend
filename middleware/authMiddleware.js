@@ -3,23 +3,17 @@ const asyncHandler = require('express-async-handler');
 const User = require('../models/User');
 
 const protect = asyncHandler(async (req, res, next) => {
+  // ⭐ Check for 'jwt' cookie (matching authController)
   let token = req.cookies.jwt;
 
   if (token) {
     try {
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
-      // Populate role so that subsequent checkPermission middleware 
-      // can access the role name or permissions
-      req.user = await User.findById(decoded.id)
-        .populate('role')
-        .select('-password');
-
+      req.user = await User.findById(decoded.id).populate('role').select('-password');
       if (!req.user) {
         res.status(401);
-        throw new Error('Not authorized, user not found');
+        throw new Error('Not authorized');
       }
-
       next();
     } catch (error) {
       res.status(401);

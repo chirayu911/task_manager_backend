@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+
 // Controller imports
 const { 
   getTasks, 
@@ -12,7 +13,7 @@ const {
 // Middleware imports
 const { protect } = require('../middleware/authMiddleware');
 const checkPermission = require('../middleware/checkPermission');
-const upload = require('../middleware/uploadMiddleware');
+const upload = require('../middleware/uploadMiddleware'); // Multer configuration
 
 /**
  * @route   /api/tasks
@@ -27,10 +28,9 @@ router.route('/')
   .post(
     protect, 
     checkPermission('tasks_create'), 
-    // ⭐ Updated: Key changed to 'videos' to match frontend and Model
     upload.fields([
       { name: 'images', maxCount: 10 }, 
-      { name: 'videos', maxCount: 5 } // Changed from 'video' to 'videos'
+      { name: 'videos', maxCount: 5 } // Must match frontend FormData 'videos'
     ]), 
     createTask
   );
@@ -48,10 +48,9 @@ router.route('/:id')
   .put(
     protect, 
     checkPermission('tasks_update'), 
-    // ⭐ Updated: Key changed to 'videos' and added description logic
     upload.fields([
       { name: 'images', maxCount: 10 }, 
-      { name: 'videos', maxCount: 5 }, // Changed from 'video' to 'videos'
+      { name: 'videos', maxCount: 5 }, // Must match frontend FormData 'videos'
     ]), 
     updateTask
   )

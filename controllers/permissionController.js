@@ -1,19 +1,13 @@
 const asyncHandler = require('express-async-handler');
 const Permission = require('../models/Permission');
 
-// @desc    Get all permissions
-// @route   GET /api/permissions
 const getPermissions = asyncHandler(async (req, res) => {
   const permissions = await Permission.find({});
   res.status(200).json(permissions);
-  
 });
 
-// @desc    Get single permission by ID (CRITICAL FOR EDITING)
-// @route   GET /api/permissions/:id
 const getPermissionById = asyncHandler(async (req, res) => {
   const permission = await Permission.findById(req.params.id);
-  
   if (permission) {
     res.status(200).json(permission);
   } else {
@@ -22,8 +16,6 @@ const getPermissionById = asyncHandler(async (req, res) => {
   }
 });
 
-// @desc    Create a permission
-// @route   POST /api/permissions
 const createPermission = asyncHandler(async (req, res) => {
   const { name, value, status } = req.body;
 
@@ -32,7 +24,6 @@ const createPermission = asyncHandler(async (req, res) => {
     throw new Error('Name and Value are required');
   }
 
-  // Check if value already exists to prevent duplicates
   const permissionExists = await Permission.findOne({ value });
   if (permissionExists) {
     res.status(400);
@@ -45,14 +36,14 @@ const createPermission = asyncHandler(async (req, res) => {
     status: status || 1
   }); 
 
+  // ⭐ Real-time Sync
+  const io = req.app.get('io');
+  if (io) io.emit('permissionsUpdated');
+
   res.status(201).json(permission);
 });
 
-// @desc    Update a permission
-// @route   PUT /api/permissions/:id
 const updatePermission = asyncHandler(async (req, res) => {
-
-  
   const permission = await Permission.findById(req.params.id);
 
   if (!permission) {
@@ -63,14 +54,16 @@ const updatePermission = asyncHandler(async (req, res) => {
   const updatedPermission = await Permission.findByIdAndUpdate(
     req.params.id,
     req.body,
-    { new: true } // Return the updated document
+    { new: true } 
   );
+
+  // ⭐ Real-time Sync
+  const io = req.app.get('io');
+  if (io) io.emit('permissionsUpdated');
 
   res.status(200).json(updatedPermission);
 });
 
-// @desc    Delete a permission
-// @route   DELETE /api/permissions/:id
 const deletePermission = asyncHandler(async (req, res) => {
   const permission = await Permission.findById(req.params.id);
 
@@ -80,6 +73,10 @@ const deletePermission = asyncHandler(async (req, res) => {
   }
 
   await permission.deleteOne();
+
+  // ⭐ Real-time Sync
+  const io = req.app.get('io');
+  if (io) io.emit('permissionsUpdated');
 
   res.status(200).json({ id: req.params.id });
 });

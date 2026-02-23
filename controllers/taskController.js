@@ -7,7 +7,8 @@ const getTasks = async (req, res) => {
   try {
     const tasks = await Task.find()
       .populate('assignedTo', 'name email')
-      .populate({ path: 'status', model: 'TaskStatus', options: { strictPopulate: false } });
+      .populate({ path: 'status', model: 'TaskStatus', options: { strictPopulate: false } })
+      .populate('project', 'title'); // Populate project details if needed
     res.json(tasks);
   } catch (error) {
     res.status(500).json({ message: 'Server Error' });
@@ -19,7 +20,8 @@ const getTaskById = async (req, res) => {
   try {
     const task = await Task.findById(req.params.id)
       .populate('assignedTo', 'name email')
-      .populate({ path: 'status', model: 'TaskStatus' });
+      .populate({ path: 'status', model: 'TaskStatus' })
+      .populate('project', 'title');
     if (!task) return res.status(404).json({ message: 'Task not found' });
     res.json(task);
   } catch (error) {
@@ -30,44 +32,55 @@ const getTaskById = async (req, res) => {
 // @desc    Create Task
 const createTask = async (req, res) => {
   try {
-    const { title, description, status, assignedTo, mentionedUsers } = req.body;
+    const { title, description, status, assignedTo, mentionedUsers, project } = req.body;
     
+    // Extract file paths from Multer
     const imagePaths = req.files?.images ? req.files.images.map(f => f.path) : [];
     const videoPaths = req.files?.videos ? req.files.videos.map(f => f.path) : [];
     const allMedia = [...imagePaths, ...videoPaths];
 
+    // Defensively parse mentioned users JSON
+    let parsedMentions = [];
+    if (mentionedUsers && mentionedUsers !== "undefined") {
+      try {
+        parsedMentions = JSON.parse(mentionedUsers);
+      } catch (e) { console.error("Mention parsing error", e); }
+    }
+
+    // Helper to safely cast empty strings to null for Mongoose ObjectIds
+    const safeObjectId = (val) => (val === "" || val === "null" || val === undefined) ? null : val;
+
     const task = await Task.create({
       title,
       description,
-      status,
-      assignedTo: assignedTo || null,
+      status: safeObjectId(status),
+      assignedTo: safeObjectId(assignedTo),
+      project: safeObjectId(project), 
+      mentionedUsers: parsedMentions,
       images: imagePaths,
       videos: videoPaths
     });
 
-    // 1. Notify Assigned User (Type: assignment)
-    if (assignedTo) {
+    // 1. Notify Assigned User
+    if (safeObjectId(assignedTo)) {
       const staffMember = await User.findById(assignedTo);
       if (staffMember?.email) {
-        // Pass description and media for attachments
-        sendTaskEmail(staffMember.email, staffMember.name, title, description, allMedia, 'assignment');
+        await sendTaskEmail(staffMember.email, staffMember.name, title, description, allMedia, 'assignment');
       }
     }
 
-    // 2. Notify Mentioned Users (Type: mention)
-    if (mentionedUsers) {
-      const mentionIds = JSON.parse(mentionedUsers);
-      const mentionedStaff = await User.find({ _id: { $in: mentionIds } });
-      
+    // 2. Notify Mentioned Users
+    if (parsedMentions.length > 0) {
+      const mentionedStaff = await User.find({ _id: { $in: parsedMentions } });
       for (const staff of mentionedStaff) {
-        // ⭐ Logic: Don't send mention email if they are already the primary assignee
-        if (staff._id.toString() !== assignedTo && staff.email) {
-           sendTaskEmail(staff.email, staff.name, title, description, allMedia, 'mention');
+        // Prevent sending a double email if the mentioned user is also the assigned user
+        if (staff._id.toString() !== safeObjectId(assignedTo) && staff.email) {
+           await sendTaskEmail(staff.email, staff.name, title, description, allMedia, 'mention');
         }
       }
     }
 
-    const populatedTask = await task.populate(['status', 'assignedTo']);
+    const populatedTask = await task.populate(['status', 'assignedTo', 'project']);
     res.status(201).json(populatedTask);
   } catch (error) {
     console.error("CREATE ERROR:", error);
@@ -78,11 +91,12 @@ const createTask = async (req, res) => {
 // @desc    Update Task
 const updateTask = async (req, res) => {
   try {
-    const { title, description, status, assignedTo, existingImages, existingVideos, mentionedUsers } = req.body;
+    const { title, description, status, assignedTo, existingImages, existingVideos, mentionedUsers, project } = req.body;
     const oldTask = await Task.findById(req.params.id);
 
     if (!oldTask) return res.status(404).json({ message: 'Task not found' });
 
+    // Defensive parsing for arrays
     let finalImages = [];
     try {
       finalImages = (existingImages && existingImages !== "undefined") ? JSON.parse(existingImages) : (oldTask.images || []);
@@ -93,6 +107,13 @@ const updateTask = async (req, res) => {
       finalVideos = (existingVideos && existingVideos !== "undefined") ? JSON.parse(existingVideos) : (oldTask.videos || []);
     } catch (e) { finalVideos = oldTask.videos || []; }
 
+    let parsedMentions = [];
+    if (mentionedUsers && mentionedUsers !== "undefined") {
+      try {
+        parsedMentions = JSON.parse(mentionedUsers);
+      } catch (e) { console.error("Mention parsing error", e); }
+    }
+
     const newImages = req.files?.images ? req.files.images.map(f => f.path) : [];
     const newVideos = req.files?.videos ? req.files.videos.map(f => f.path) : [];
     
@@ -100,36 +121,40 @@ const updateTask = async (req, res) => {
     const currentVideos = [...finalVideos, ...newVideos];
     const allMedia = [...currentImages, ...currentVideos];
 
+    // Helper to safely cast empty strings to null
+    const safeObjectId = (val) => (val === "" || val === "null" || val === undefined) ? null : val;
+    const cleanAssignedTo = safeObjectId(assignedTo);
+
     const updatedTask = await Task.findByIdAndUpdate(
       req.params.id,
       { 
         title, 
         description,
-        status, 
-        assignedTo: (assignedTo === "" || assignedTo === "null") ? null : assignedTo,
+        status: safeObjectId(status),
+        assignedTo: cleanAssignedTo,
+        project: safeObjectId(project), 
+        mentionedUsers: parsedMentions,
         images: currentImages,
         videos: currentVideos 
       },
       { new: true }
-    ).populate(['status', 'assignedTo']);
+    ).populate(['status', 'assignedTo', 'project']);
 
     // 1. Handle New Mentions
-    if (mentionedUsers) {
-      const mentionIds = JSON.parse(mentionedUsers);
-      const mentionedStaff = await User.find({ _id: { $in: mentionIds } });
+    if (parsedMentions.length > 0) {
+      const mentionedStaff = await User.find({ _id: { $in: parsedMentions } });
       for (const staff of mentionedStaff) {
-        // Only send if not the primary assigned person
-        if (staff._id.toString() !== assignedTo && staff.email) {
-         sendTaskEmail(staff.email, staff.name, title || updatedTask.title, description, allMedia, 'mention');
+        if (staff._id.toString() !== cleanAssignedTo && staff.email) {
+          await sendTaskEmail(staff.email, staff.name, title || updatedTask.title, description, allMedia, 'mention');
         }
       }
     }
 
     // 2. Notify if primary assignment changed
-    if (assignedTo && assignedTo !== (oldTask.assignedTo?.toString())) {
-      const staffMember = await User.findById(assignedTo);
+    if (cleanAssignedTo && cleanAssignedTo !== (oldTask.assignedTo?.toString())) {
+      const staffMember = await User.findById(cleanAssignedTo);
       if (staffMember?.email) {
-        sendTaskEmail(staffMember.email, staffMember.name, title || updatedTask.title, description, allMedia, 'assignment');
+        await sendTaskEmail(staffMember.email, staffMember.name, title || updatedTask.title, description, allMedia, 'assignment');
       }
     }
 

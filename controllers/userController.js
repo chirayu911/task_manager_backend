@@ -34,7 +34,7 @@ const loginUser = asyncHandler(async (req, res) => {
   const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '30d' });
   const permissions = await getFlattenedPermissions(user.role?._id);
 
-  res.cookie('token', token, {
+  res.cookie('jwt', token, {
     httpOnly: true,
     secure: true,      // Must be true for 'none' sameSite
     sameSite: 'none',  // Essential for Dev Tunnels/Cross-site
@@ -53,7 +53,7 @@ const loginUser = asyncHandler(async (req, res) => {
 
 // ================= LOGOUT =================
 const logoutUser = asyncHandler(async (req, res) => {
-  res.cookie('token', '', { 
+  res.cookie('jwt', '', { 
     httpOnly: true, 
     secure: true, 
     sameSite: 'none', 
@@ -105,62 +105,53 @@ const getUserById = asyncHandler(async (req, res) => {
 });
 
 // ================= CREATE USER =================
+// ================= CREATE USER =================
 const registerUser = asyncHandler(async (req, res) => {
   const { name, email, username, role } = req.body;
 
-  // 1. Validation
   if (!name || !email || !username || !role) {
     res.status(400);
     throw new Error('Missing required fields');
   }
 
-  // 2. Check existence
   const exists = await User.findOne({ $or: [{ email }, { username }] });
   if (exists) {
     res.status(400);
-    throw new Error('User already exists with this email or username');
+    throw new Error('User already exists');
   }
 
-  // 3. Prepare credentials
+  // Generate Plain Password
+  // If crypto is missing, this line causes the 500 crash!
   const plainPassword = crypto.randomBytes(5).toString('hex');
-  const hashed = await bcrypt.hash(plainPassword, 10);
 
-  // 4. Create User in Database
   const user = await User.create({
     name,
     email,
     username,
-    password: hashed,
+    password: plainPassword, // Mongoose pre('save') hook handles the hash
     role
   });
 
   if (user) {
-    // ⭐ Real-time Sync: Notify UI immediately
     const io = req.app.get("io");
     if (io) io.emit("staffChanged"); 
 
-    // ⭐ ISOLATED EMAIL BLOCK ⭐
-    // We wrap this separately so an SMTP error doesn't trigger the global catch
     try {
       if (typeof sendWelcomeEmail === 'function') {
        sendWelcomeEmail(user.email, user.name, user.username, plainPassword);
-        console.log(`✅ Welcome email sent to ${user.email}`);
       }
     } catch (emailErr) {
-      // Log the error for your MLOps/DevOps debugging
-      console.error("❌ Email failed to send, but user was created:", emailErr.message);
-      // We do NOT throw an error here. The request continues.
+      console.error("Email failed:", emailErr.message);
     }
 
-    // 5. Send Success Response regardless of email status
     res.status(201).json({ 
       success: true, 
-      message: "User created successfully. Credentials emailed if service is active.",
+      message: "User created successfully.",
       user: { _id: user._id, name: user.name }
     });
   } else {
     res.status(400);
-    throw new Error('Invalid user data received');
+    throw new Error('Invalid user data');
   }
 });
 
@@ -180,7 +171,7 @@ const updateUser = asyncHandler(async (req, res) => {
   user.role = req.body.role || user.role;
 
   if (req.body.password) {
-    user.password = await bcrypt.hash(req.body.password, 10);
+    // user.password = await bcrypt.hash(req.body.password, 10);
   }
 
   const updatedUser = await user.save();
