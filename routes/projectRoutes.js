@@ -7,7 +7,8 @@ const {
   getProjectById, 
   createProject, 
   updateProject, 
-  deleteProject 
+  deleteProject,
+  getProjectTeam
 } = require('../controllers/projectController');
 
 const { protect } = require('../middleware/authMiddleware');
@@ -41,5 +42,6 @@ router.route('/:id')
     checkPermission('projects_delete'), 
     deleteProject
   );
+  router.get('/:id/team', getProjectTeam);
 
 module.exports = router;

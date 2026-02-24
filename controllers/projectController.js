@@ -1,146 +1,163 @@
+const asyncHandler = require('express-async-handler');
 const Project = require('../models/Project');
-const User = require('../models/User');
-const sendAssignEmail = require('../utils/sendAssignEmail');
 
-const getProjects = async (req, res) => {
-  try {
-    const projects = await Project.find()
-      .populate('assignedUsers', 'name email role')
-      .populate('createdBy', 'name')
-      .sort({ createdAt: -1 }); 
-      
-    res.json(projects);
-  } catch (error) {
-    res.status(500).json({ message: 'Server Error while fetching projects' });
+/**
+ * @desc    Get all projects
+ * @route   GET /api/projects
+ * @access  Private
+ */
+const getProjects = asyncHandler(async (req, res) => {
+  // 1. Determine User Role
+  const roleName = typeof req.user.role === 'object' ? req.user.role?.name : req.user.role;
+  const isAdmin = roleName === 'admin' || roleName === 'superadmin' || req.user.permissions?.includes('*');
+
+  let query = {};
+
+  // 2. Filter logic: Admins see all projects. Staff only see projects they are assigned to.
+  if (!isAdmin) {
+    query = { assignedUsers: req.user._id };
   }
-};
 
-const getProjectById = async (req, res) => {
+  const projects = await Project.find(query)
+    .populate('assignedUsers', 'name email role')
+    .sort({ createdAt: -1 });
+
+  res.status(200).json(projects);
+});
+
+/**
+ * @desc    Get single project by ID
+ * @route   GET /api/projects/:id
+ * @access  Private
+ */
+const getProjectById = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+
+  if (!id || id === 'null' || id === 'undefined') {
+    return res.status(400).json({ message: 'Invalid Project ID' });
+  }
+
+  const project = await Project.findById(id).populate('assignedUsers', 'name email role');
+
+  if (!project) {
+    res.status(404);
+    throw new Error('Project not found');
+  }
+
+  res.status(200).json(project);
+});
+
+/**
+ * @desc    Create a new project
+ * @route   POST /api/projects
+ * @access  Private (Admin/Manager)
+ */
+const createProject = asyncHandler(async (req, res) => {
+  const { title, description, assignedUsers } = req.body;
+
+  if (!title) {
+    res.status(400);
+    throw new Error('Please add a project title');
+  }
+
+  const project = await Project.create({
+    title,
+    description,
+    assignedUsers: assignedUsers || [],
+  });
+
+  const populatedProject = await Project.findById(project._id).populate('assignedUsers', 'name email role');
+
+  res.status(201).json(populatedProject);
+});
+
+/**
+ * @desc    Update project details
+ * @route   PUT /api/projects/:id
+ * @access  Private (Admin/Manager)
+ */
+const updateProject = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+
+  if (!id || id === 'null' || id === 'undefined') {
+    return res.status(400).json({ message: 'Invalid Project ID' });
+  }
+
+  const project = await Project.findById(id);
+
+  if (!project) {
+    res.status(404);
+    throw new Error('Project not found');
+  }
+
+  const updatedProject = await Project.findByIdAndUpdate(
+    id,
+    req.body,
+    { new: true, runValidators: true }
+  ).populate('assignedUsers', 'name email role');
+
+  res.status(200).json(updatedProject);
+});
+
+/**
+ * @desc    Delete a project
+ * @route   DELETE /api/projects/:id
+ * @access  Private (Admin only)
+ */
+const deleteProject = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+
+  if (!id || id === 'null' || id === 'undefined') {
+    return res.status(400).json({ message: 'Invalid Project ID' });
+  }
+
+  const project = await Project.findById(id);
+
+  if (!project) {
+    res.status(404);
+    throw new Error('Project not found');
+  }
+
+  await project.deleteOne();
+  
+  res.status(200).json({ id: req.params.id, message: 'Project deleted successfully' });
+});
+
+/**
+ * @desc    Get ONLY the assigned users for a specific project
+ * @route   GET /api/projects/:id/team
+ * @access  Private
+ */
+const getProjectTeam = async (req, res) => {
   try {
-    const project = await Project.findById(req.params.id)
-      .populate('assignedUsers', 'name email role')
-      .populate('createdBy', 'name');
+    const { id } = req.params;
 
-    if (!project) return res.status(404).json({ message: 'Project not found' });
+    // ⭐ Bulletproof check against bad LocalStorage data hitting the DB
+    if (!id || id === 'null' || id === 'undefined') {
+      return res.status(400).json({ message: 'Invalid or missing Project ID' });
+    }
+
+    const project = await Project.findById(id).populate('assignedUsers', 'name email role');
     
-    res.json(project);
+    // Safely return a 404 response WITHOUT crashing the server
+    if (!project) {
+      return res.status(404).json({ message: 'Project not found' });
+    }
+
+    // Return the array of team members
+    res.status(200).json(project.assignedUsers);
   } catch (error) {
-    res.status(500).json({ message: 'Invalid Project ID format' });
+    console.error("GET PROJECT TEAM ERROR:", error);
+    // Safely catch CastErrors (e.g., malformed ObjectIds)
+    res.status(500).json({ message: 'Server error while fetching project team' });
   }
 };
 
-const createProject = async (req, res) => {
-  try {
-    const { title, description, assignedUsers } = req.body;
-
-    let finalAssignedUsers = [];
-    if (Array.isArray(assignedUsers)) {
-      finalAssignedUsers = assignedUsers;
-    } else if (typeof assignedUsers === 'string' && assignedUsers !== "") {
-      try {
-        finalAssignedUsers = JSON.parse(assignedUsers);
-      } catch (e) {
-        finalAssignedUsers = [assignedUsers];
-      }
-    }
-
-    const project = await Project.create({
-      title,
-      description,
-      assignedUsers: finalAssignedUsers,
-      createdBy: req.user._id 
-    });
-
-    if (finalAssignedUsers.length > 0) {
-      const staffMembers = await User.find({ _id: { $in: finalAssignedUsers } });
-      
-      for (const staff of staffMembers) {
-        if (staff.email) {
-          await sendAssignEmail(
-            staff.email, 
-            staff.name, 
-            `Project Assigned: ${title}`, 
-            description, 
-            [], 
-            'assignment'
-          );
-        }
-      }
-    }
-
-    const populatedProject = await project.populate('assignedUsers', 'name email');
-    res.status(201).json(populatedProject);
-  } catch (error) {
-    res.status(400).json({ message: error.message });
-  }
-};
-
-const updateProject = async (req, res) => {
-  try {
-    const { title, description, assignedUsers } = req.body;
-    const oldProject = await Project.findById(req.params.id);
-
-    if (!oldProject) return res.status(404).json({ message: 'Project not found' });
-
-    let finalAssignedUsers = [];
-    if (Array.isArray(assignedUsers)) {
-      finalAssignedUsers = assignedUsers;
-    } else if (typeof assignedUsers === 'string' && assignedUsers !== "") {
-      try {
-        finalAssignedUsers = JSON.parse(assignedUsers);
-      } catch (e) {
-        finalAssignedUsers = [assignedUsers];
-      }
-    }
-
-    const updatedProject = await Project.findByIdAndUpdate(
-      req.params.id,
-      { title, description, assignedUsers: finalAssignedUsers },
-      { new: true } 
-    ).populate('assignedUsers', 'name email');
-
-    const oldUserIds = oldProject.assignedUsers.map(id => id.toString());
-    const newUserIds = finalAssignedUsers.filter(id => !oldUserIds.includes(id.toString()));
-
-    if (newUserIds.length > 0) {
-      const newStaff = await User.find({ _id: { $in: newUserIds } });
-      for (const staff of newStaff) {
-        if (staff.email) {
-          await sendAssignEmail(
-            staff.email, 
-            staff.name, 
-            `Added to Project: ${title || updatedProject.title}`, 
-            description, 
-            [], 
-            'assignment'
-          );
-        }
-      }
-    }
-
-    res.json(updatedProject);
-  } catch (error) {
-    res.status(500).json({ message: "Internal Server Error", error: error.message });
-  }
-};
-
-const deleteProject = async (req, res) => {
-  try {
-    const project = await Project.findById(req.params.id);
-    if (!project) return res.status(404).json({ message: 'Project not found' });
-    
-    await project.deleteOne();
-    res.json({ message: 'Project removed successfully' });
-  } catch (error) {
-    res.status(500).json({ message: 'Server Error while deleting project' });
-  }
-};
-
-// ⭐ Make sure this export block exists so the Router can see these functions
-module.exports = { 
-  getProjects, 
-  getProjectById, 
-  createProject, 
-  updateProject, 
-  deleteProject 
+module.exports = {
+  getProjects,
+  getProjectById,
+  createProject,
+  updateProject,
+  deleteProject,
+  getProjectTeam,
 };

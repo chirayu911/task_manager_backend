@@ -6,12 +6,16 @@ const taskSchema = new mongoose.Schema({
     required: [true, 'Please add a task title'],
     trim: true
   },
-  // ⭐ Added: Multi-line description for task details
   description: {
     type: String,
     trim: true,
     default: ''
   },
+  project: {
+  type: mongoose.Schema.Types.ObjectId,
+  ref: 'Project',
+  required: [true, 'Must belong to a project'],
+},
   status: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'TaskStatus', 
@@ -22,31 +26,14 @@ const taskSchema = new mongoose.Schema({
     ref: 'User', 
     default: null
   },
-  // ⭐ Array of strings for multiple image paths
-  images: [
-    {
-      type: String
-    }
-  ],
-  // ⭐ Updated: Renamed to 'videos' (plural) to match frontend FormData
-  videos: [
-    {
-      type: String
-    }
-  ],
-  // ⭐ Added: Track which users were mentioned in the description
+  images: [{ type: String }],
+  videos: [{ type: String }],
   mentionedUsers: [
     {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User'
     }
-  
   ],
-  project: {
-  type: mongoose.Schema.Types.ObjectId,
-  ref: 'Project',
-  default: null
-},
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
@@ -54,5 +41,12 @@ const taskSchema = new mongoose.Schema({
 }, {
   timestamps: true 
 });
+
+// ⭐ GOAL 3: DATABASE INDEXES FOR MASSIVE PERFORMANCE BOOST
+// This makes filtering by status, assignee, or mentions lightning fast.
+taskSchema.index({ assignedTo: 1 });
+taskSchema.index({ status: 1 });
+taskSchema.index({ mentionedUsers: 1 });
+taskSchema.index({ createdAt: -1 }); 
 
 module.exports = mongoose.model('Task', taskSchema);

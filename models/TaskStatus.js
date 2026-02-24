@@ -1,18 +1,26 @@
 const mongoose = require('mongoose');
 
-const taskStatusSchema = new mongoose.Schema({
-  // The name of the status (e.g., "Pending", "Testing")
-  name: { 
-    type: String, 
-    required: true, 
-    unique: true 
+const taskStatusSchema = mongoose.Schema(
+  {
+    name: {
+      type: String,
+      required: true,
+    },
+    status: {
+      type: String,
+      enum: ['active', 'inactive'],
+      default: 'active',
+    },
+    // ⭐ Ensure this exists!
+    project: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Project',
+      required: [true, 'Must belong to a project'],
+    }
   },
-  // ⭐ Status toggle: active / inactive
-  status: { 
-    type: String, 
-    enum: ['active', 'inactive'], 
-    default: 'active' 
+  {
+    timestamps: true,
   }
-}, { timestamps: true });
+);
 
 module.exports = mongoose.model('TaskStatus', taskStatusSchema);
