@@ -25,7 +25,6 @@ const checkPermission = (requiredPermission) => {
       }
 
       // ✅ Check permission string
-      console.log(role.permissions);
       if (role.permissions.includes(requiredPermission)) {
         return next();
       }

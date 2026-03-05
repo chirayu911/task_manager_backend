@@ -34,7 +34,7 @@ const sendTaskEmail = async (recipientEmail, staffName, taskTitle, description =
       ? `💬 You were mentioned in: ${taskTitle}` 
       : `📌 New Task Assigned: ${taskTitle}`;
     
-    const headerColor = isMention ? '#ec4899' : '#4f46e5'; // Pink for mention, Indigo for assignment
+    const headerColor =  '#4f46e5'; 
     const icon = isMention ? '💬' : '📋';
 
     const mailOptions = {

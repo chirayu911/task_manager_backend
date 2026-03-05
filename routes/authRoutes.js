@@ -5,14 +5,20 @@ const router = express.Router();
 const { 
   loginUser, 
   logoutUser, 
-  getMe 
-} = require('../controllers/userController');
+  getMe,
+  forgotPassword, 
+  resetPassword   
+} = require('../controllers/userController'); 
 
 const { protect } = require('../middleware/authMiddleware');
 
 // Auth Routes
-router.post('/login', loginUser);  // POST /api/auth/login
-router.post('/logout', logoutUser); // POST /api/auth/logout
-router.get('/me', protect, getMe);  // GET /api/auth/me
+router.post('/login', loginUser);   
+router.post('/logout', logoutUser); 
+router.get('/me', protect, getMe);  
+
+// Password Reset Routes
+router.post('/forgotpassword', forgotPassword);
+router.put('/resetpassword/:resettoken', resetPassword);
 
 module.exports = router;

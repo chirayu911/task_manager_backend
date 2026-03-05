@@ -11,11 +11,20 @@ const taskSchema = new mongoose.Schema({
     trim: true,
     default: ''
   },
+  
+  // ⭐ NEW: This field differentiates between Tasks and Issues
+  itemType: {
+    type: String,
+    enum: ['Task', 'Issue'], // Restricts the value to only these two options
+    default: 'Task',         // Defaults to 'Task' if nothing is provided
+    required: true
+  },
+
   project: {
-  type: mongoose.Schema.Types.ObjectId,
-  ref: 'Project',
-  required: [true, 'Must belong to a project'],
-},
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Project',
+    required: [true, 'Must belong to a project'],
+  },
   status: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'TaskStatus', 
@@ -43,10 +52,12 @@ const taskSchema = new mongoose.Schema({
 });
 
 // ⭐ GOAL 3: DATABASE INDEXES FOR MASSIVE PERFORMANCE BOOST
-// This makes filtering by status, assignee, or mentions lightning fast.
 taskSchema.index({ assignedTo: 1 });
 taskSchema.index({ status: 1 });
 taskSchema.index({ mentionedUsers: 1 });
 taskSchema.index({ createdAt: -1 }); 
+
+// ⭐ NEW INDEX: Makes filtering by "Tasks" vs "Issues" lightning fast
+taskSchema.index({ itemType: 1 }); 
 
 module.exports = mongoose.model('Task', taskSchema);

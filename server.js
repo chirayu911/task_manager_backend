@@ -8,12 +8,15 @@ const { Server } = require("socket.io");
 const taskStatusRoutes = require('./routes/taskStatusRoutes');
 const path = require('path');
 const session = require('express-session');
+const subscriptionRoutes = require('./routes/subscriptionRoutes');
 
 dotenv.config();
 connectDB();
 
 const app = express();
 const server = http.createServer(app);
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+const documentRoutes = require('./routes/documentRoutes');
 
 // ⭐ Update these with your ACTUAL Dev Tunnel URLs
 const allowedOrigins = [
@@ -36,6 +39,8 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
 
 // ⭐ Configured for Dev Tunnels and Cross-PC access
 app.use(session({
@@ -73,9 +78,10 @@ app.use("/api/roles", require("./routes/roleRoutes"));
 app.use("/api/tasks", require("./routes/taskRoutes"));
 app.use("/api/permissions", require("./routes/permissionRoutes"));
 app.use('/api/task-statuses', taskStatusRoutes);
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use('/api/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use("/api/projects", require("./routes/projectRoutes"));
-app.use("/api/issues", require("./routes/issueRoutes"));
+app.use('/api/subscriptions', subscriptionRoutes);
+app.use('/api/documents', documentRoutes);
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
