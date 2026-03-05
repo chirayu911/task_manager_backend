@@ -4,7 +4,9 @@ const Role = require('../models/Role');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
-const sendWelcomeEmail = require('../utils/sendEmail');
+
+// Destructure both email functions from your utility file
+const { sendWelcomeEmail, sendEmail } = require('../utils/sendEmail');
 
 // ================= PERMISSION HELPER =================
 const getFlattenedPermissions = async (roleId) => {
@@ -21,10 +23,22 @@ const getFlattenedPermissions = async (roleId) => {
 
 // ================= LOGIN =================
 const loginUser = asyncHandler(async (req, res) => {
-  const { username, password } = req.body;
+  const { email, username, password } = req.body;
   
-  // Find user and explicitly populate role for permission check
-  const user = await User.findOne({ username }).populate('role');
+  const loginIdentifier = username || email;
+
+  if (!loginIdentifier || !password) {
+    res.status(400);
+    throw new Error('Please provide a username/email and password');
+  }
+
+  // Find user by username OR email, and explicitly select the hidden password field
+  const user = await User.findOne({ 
+    $or: [
+      { email: loginIdentifier }, 
+      { username: loginIdentifier }
+    ] 
+  }).populate('role').select('+password');
 
   if (!user || !(await bcrypt.compare(password, user.password))) {
     res.status(401);
@@ -105,7 +119,6 @@ const getUserById = asyncHandler(async (req, res) => {
 });
 
 // ================= CREATE USER =================
-// ================= CREATE USER =================
 const registerUser = asyncHandler(async (req, res) => {
   const { name, email, username, role } = req.body;
 
@@ -121,14 +134,13 @@ const registerUser = asyncHandler(async (req, res) => {
   }
 
   // Generate Plain Password
-  // If crypto is missing, this line causes the 500 crash!
   const plainPassword = crypto.randomBytes(5).toString('hex');
 
   const user = await User.create({
     name,
     email,
     username,
-    password: plainPassword, // Mongoose pre('save') hook handles the hash
+    password: plainPassword, // Mongoose pre('save') hook handles the hashing
     role
   });
 
@@ -171,7 +183,8 @@ const updateUser = asyncHandler(async (req, res) => {
   user.role = req.body.role || user.role;
 
   if (req.body.password) {
-    // user.password = await bcrypt.hash(req.body.password, 10);
+    // Setting the password here triggers the Mongoose pre-save hook to hash it automatically
+    user.password = req.body.password;
   }
 
   const updatedUser = await user.save();
@@ -207,6 +220,75 @@ const deleteUser = asyncHandler(async (req, res) => {
   res.json({ message: 'User removed successfully' });
 });
 
+// ================= FORGOT PASSWORD =================
+const forgotPassword = asyncHandler(async (req, res) => {
+  const user = await User.findOne({ email: req.body.email });
+
+  if (!user) {
+    return res.status(200).json({ message: 'If that email exists, a reset link has been sent.' });
+  }
+
+  const resetToken = user.getResetPasswordToken();
+  await user.save({ validateBeforeSave: false });
+
+  // Safely remove any trailing slashes from the FRONTEND_URL to prevent double-slash bugs
+  const baseUrl = (process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '');
+  const resetUrl = `${baseUrl}/reset-password/${resetToken}`;
+
+  // Message includes safe quotation marks around the href attribute
+  const message = `
+    <h1>Task Manager - Password Reset</h1>
+    <p>You requested a password reset. Please click on the following link to reset your password. This link is valid for 15 minutes.</p>
+    <a href="${resetUrl}">${resetUrl}</a>
+    <p>If you did not request this, please ignore this email.</p>
+  `;
+
+  try {
+    await sendEmail({
+      to: user.email,
+      subject: 'Task Manager - Password Reset Request',
+      text: message,
+    });
+
+    res.status(200).json({ message: 'If that email exists, a reset link has been sent.' });
+  } catch (error) {
+    console.error("EMAIL SEND ERROR:", error);
+    
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpire = undefined;
+    await user.save({ validateBeforeSave: false });
+
+    res.status(500);
+    throw new Error('Email could not be sent. Please contact an administrator.');
+  }
+});
+
+// ================= RESET PASSWORD =================
+const resetPassword = asyncHandler(async (req, res) => {
+  const resetPasswordToken = crypto
+    .createHash('sha256')
+    .update(req.params.resettoken)
+    .digest('hex');
+
+  const user = await User.findOne({
+    resetPasswordToken,
+    resetPasswordExpire: { $gt: Date.now() },
+  });
+
+  if (!user) {
+    res.status(400);
+    throw new Error('Invalid or expired reset token');
+  }
+
+  user.password = req.body.password;
+  
+  user.resetPasswordToken = undefined;
+  user.resetPasswordExpire = undefined;
+  await user.save();
+
+  res.status(200).json({ message: 'Password reset successful. You can now log in.' });
+});
+
 module.exports = { 
   loginUser, 
   logoutUser, 
@@ -215,5 +297,7 @@ module.exports = {
   getUserById, 
   registerUser, 
   updateUser, 
-  deleteUser 
+  deleteUser,
+  forgotPassword, 
+  resetPassword   
 };

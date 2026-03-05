@@ -1,20 +1,24 @@
 const nodemailer = require('nodemailer');
 
+// Helper function to create the shared transporter
+const createTransporter = () => {
+  return nodemailer.createTransport({
+    service: 'gmail',
+    host: 'smtp.gmail.com',
+    port: 465,
+    secure: true,
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS, 
+    },
+  });
+};
+
+// 1. Your Existing Welcome Email Function
 const sendWelcomeEmail = async (email, name, username, password) => {
   try {
-    const transporter = nodemailer.createTransport({
-      service: 'gmail',
-      host: 'smtp.gmail.com',
-      port: 465,
-      secure: true,
-      auth: {
-        // Use App Password from Google Account Security settings
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS, 
-      },
-    });
+    const transporter = createTransporter();
 
-    // Professional HTML Template
     const mailOptions = {
       from: `"Task Management System" <${process.env.EMAIL_USER}>`,
       to: email,
@@ -49,7 +53,7 @@ const sendWelcomeEmail = async (email, name, username, password) => {
 
             <div style="border-top: 1px solid #f3f4f6; padding-top: 20px;">
               <p style="color: #9ca3af; font-size: 12px; text-align: center;">
-                <strong>Security
+                <strong>Security Notice:</strong> Please change your password after logging in.
               </p>
             </div>
           </div>
@@ -60,14 +64,55 @@ const sendWelcomeEmail = async (email, name, username, password) => {
       `,
     };
 
-    const info = transporter.sendMail(mailOptions);
-    console.log('✅ Email sent successfully:', info.messageId);
+    // Added 'await' here to ensure the function waits for the email to send
+    const info = await transporter.sendMail(mailOptions);
+    console.log('✅ Welcome Email sent successfully:', info.messageId);
     return info;
   } catch (error) {
-    console.error('❌ Email dispatch failed:', error);
-    // As an AI, I suggest logging this to your DevOps dashboard
+    console.error('❌ Welcome Email dispatch failed:', error);
+    // Logging to DevOps dashboard is a great practice!
     throw new Error('Email delivery failed');
   }
 };
 
-module.exports = sendWelcomeEmail;
+// 2. The New Forgot Password / Generic Email Function
+const sendEmail = async (options) => {
+  try {
+    const transporter = createTransporter();
+
+    const mailOptions = {
+      from: `"Task Management System" <${process.env.EMAIL_USER}>`,
+      to: options.to,
+      subject: options.subject,
+      // Wrapped the authController's message in your beautiful GPERI template!
+      html: `
+        <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: auto; border: 1px solid #e0e0e0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.05);">
+          <div style="background-color: #2563eb; padding: 30px; text-align: center;">
+            <h1 style="color: white; margin: 0; font-size: 24px;">Security Request</h1>
+          </div>
+          <div style="padding: 30px; background-color: white;">
+            <div style="color: #4b5563; font-size: 16px; line-height: 1.6;">
+              ${options.text}
+            </div>
+          </div>
+          <div style="background-color: #f9fafb; padding: 15px; text-align: center; color: #9ca3af; font-size: 12px;">
+            &copy; 2026 Gujarat Power Engineering and Research Institute (GPERI)
+          </div>
+        </div>
+      `,
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log('✅ Password Reset Email sent successfully:', info.messageId);
+    return info;
+  } catch (error) {
+    console.error('❌ Password Reset Email dispatch failed:', error);
+    throw new Error('Email delivery failed');
+  }
+};
+
+// Export both functions
+module.exports = {
+  sendWelcomeEmail,
+  sendEmail
+};

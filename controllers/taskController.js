@@ -3,10 +3,10 @@ const User = require('../models/User');
 const Project = require('../models/Project'); // ⭐ Added Project model for validation
 const sendTaskEmail = require('../utils/sendAssignEmail');
 
-// @desc    Get all tasks
+// @desc    Get all tasks/issues
 const getTasks = async (req, res) => {
   try {
-    const { project } = req.query;
+    const { project, itemType } = req.query; // ⭐ Added itemType to destructuring
 
     // ⭐ Enforce project filtering: Do not return tasks if no project is selected
     if (!project) {
@@ -15,6 +15,11 @@ const getTasks = async (req, res) => {
 
     // Base query binds to the selected project
     let query = { project };
+
+    // ⭐ FILTER LOGIC: Check if the frontend requested specifically Tasks or Issues
+    if (itemType) {
+      query.itemType = itemType; 
+    }
 
     // If the user making the request is NOT an admin, only search the DB for 
     // tasks assigned to them, or tasks where they are mentioned WITHIN this project.
@@ -56,10 +61,11 @@ const getTaskById = async (req, res) => {
   }
 };
 
-// @desc    Create Task
+// @desc    Create Task or Issue
 const createTask = async (req, res) => {
   try {
-    const { title, description, status, assignedTo, mentionedUsers, project } = req.body;
+    // ⭐ Extracted itemType from req.body
+    const { title, description, status, assignedTo, mentionedUsers, project, itemType } = req.body;
     
     // ⭐ Validate that a project was provided
     if (!project) {
@@ -90,7 +96,8 @@ const createTask = async (req, res) => {
       project, // ⭐ Bind task to the project
       assignedTo: assignedTo || null,
       images: imagePaths,
-      videos: videoPaths
+      videos: videoPaths,
+      itemType: itemType || 'Task' // ⭐ Saves as "Issue" if provided, otherwise defaults to "Task"
     });
 
     if (assignedTo) {
@@ -124,10 +131,11 @@ const createTask = async (req, res) => {
   }
 };
 
-// @desc    Update Task
+// @desc    Update Task or Issue
 const updateTask = async (req, res) => {
   try {
-    const { title, description, status, assignedTo, existingImages, existingVideos, mentionedUsers } = req.body;
+    // ⭐ Extracted itemType from req.body
+    const { title, description, status, assignedTo, existingImages, existingVideos, mentionedUsers, itemType } = req.body;
     const oldTask = await Task.findById(req.params.id);
 
     if (!oldTask) return res.status(404).json({ message: 'Task not found' });
@@ -168,7 +176,8 @@ const updateTask = async (req, res) => {
         status, 
         assignedTo: (assignedTo === "" || assignedTo === "null") ? null : assignedTo,
         images: currentImages,
-        videos: currentVideos 
+        videos: currentVideos,
+        itemType: itemType || oldTask.itemType // ⭐ Preserves existing type or updates it
       },
       { new: true }
     ).populate(['status', 'assignedTo']);
