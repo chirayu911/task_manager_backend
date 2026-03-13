@@ -11,7 +11,7 @@ const userSchema = new mongoose.Schema(
     username: {
       type: String,
       unique: true,
-      sparse: true, // Allows multiple users without a username temporarily if needed
+      sparse: true, 
     },
     email: {
       type: String,
@@ -26,18 +26,24 @@ const userSchema = new mongoose.Schema(
       type: String,
       required: [true, 'Please add a password'],
       minlength: [6, 'Password must be at least 6 characters'],
-      select: false, // Prevents the password from being accidentally returned in API responses
+      select: false, 
     },
     role: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'Role', // References your Role model for RBAC
+      ref: 'Role', 
     },
-    permissions: {
-      type: [String],
-      default: [],
+  
+    preferences: {
+      autoSaveEnabled: { type: Boolean, default: false } 
     },
-    
-    // ⭐ Forgot Password Fields
+    company: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Company', // Links the user back to their company
+    },
+    isCompanyOwner: {
+      type: Boolean,
+      default: false, // Will be set to true for users who register via the company form
+    },
     resetPasswordToken: String,
     resetPasswordExpire: Date,
   },
@@ -46,38 +52,26 @@ const userSchema = new mongoose.Schema(
   }
 );
 
-// ⭐ Middleware: Hash the password before saving it to the database
 userSchema.pre('save', async function (next) {
-  // If the password field wasn't modified (e.g., user is just updating their name), skip hashing
   if (!this.isModified('password')) {
     return next();
   }
-
   const salt = await bcrypt.genSalt(10);
   this.password = await bcrypt.hash(this.password, salt);
   next();
 });
 
-// ⭐ Method: Compare the entered password with the hashed database password during login
 userSchema.methods.matchPassword = async function (enteredPassword) {
   return await bcrypt.compare(enteredPassword, this.password);
 };
 
-// ⭐ Method: Generate and hash the password reset token
 userSchema.methods.getResetPasswordToken = function () {
-  // 1. Generate an unhashed, random token
   const resetToken = crypto.randomBytes(20).toString('hex');
-
-  // 2. Hash the token and set it to the schema field (to store safely in the database)
   this.resetPasswordToken = crypto
     .createHash('sha256')
     .update(resetToken)
     .digest('hex');
-
-  // 3. Set expiration to 15 minutes from now
   this.resetPasswordExpire = Date.now() + 15 * 60 * 1000;
-
-  // 4. Return the UNHASHED token so the controller can send it in the email
   return resetToken;
 };
 

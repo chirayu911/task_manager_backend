@@ -2,20 +2,27 @@ const asyncHandler = require('express-async-handler');
 const Project = require('../models/Project');
 
 /**
- * @desc    Get all projects
+ * @desc    Get all projects (Scoped to Company)
  * @route   GET /api/projects
  * @access  Private
  */
 const getProjects = asyncHandler(async (req, res) => {
-  // 1. Determine User Role
-  const roleName = typeof req.user.role === 'object' ? req.user.role?.name : req.user.role;
-  const isAdmin = roleName === 'admin' || roleName === 'superadmin' || req.user.permissions?.includes('*');
+  // 1. Determine User Context
+  const isSuperAdmin = req.user.permissions?.includes('*');
+  const isOwner = req.user.isCompanyOwner;
+  const userCompany = req.user.company;
 
   let query = {};
 
-  // 2. Filter logic: Admins see all projects. Staff only see projects they are assigned to.
-  if (!isAdmin) {
-    query = { assignedUsers: req.user._id };
+  // 2. Filter Logic
+  if (!isSuperAdmin) {
+    // Everyone except SuperAdmin is locked to their own company
+    query.company = userCompany;
+
+    // Staff (not owners) only see projects where they are in the assignedUsers array
+    if (!isOwner) {
+      query.assignedUsers = req.user._id;
+    }
   }
 
   const projects = await Project.find(query)
@@ -44,13 +51,20 @@ const getProjectById = asyncHandler(async (req, res) => {
     throw new Error('Project not found');
   }
 
+  // ⭐ Security Check: Ensure user belongs to the same company as the project
+  const isSuperAdmin = req.user.permissions?.includes('*');
+  if (!isSuperAdmin && project.company?.toString() !== req.user.company?.toString()) {
+    res.status(403);
+    throw new Error('Not authorized to access projects from other companies');
+  }
+
   res.status(200).json(project);
 });
 
 /**
  * @desc    Create a new project
  * @route   POST /api/projects
- * @access  Private (Admin/Manager)
+ * @access  Private (Owner/Admin)
  */
 const createProject = asyncHandler(async (req, res) => {
   const { title, description, assignedUsers } = req.body;
@@ -60,10 +74,13 @@ const createProject = asyncHandler(async (req, res) => {
     throw new Error('Please add a project title');
   }
 
+  // ⭐ Auto-assign the user's company and the creator ID
   const project = await Project.create({
     title,
     description,
     assignedUsers: assignedUsers || [],
+    company: req.user.company, // Lock to creator's company
+    createdBy: req.user._id,
   });
 
   const populatedProject = await Project.findById(project._id).populate('assignedUsers', 'name email role');
@@ -74,20 +91,26 @@ const createProject = asyncHandler(async (req, res) => {
 /**
  * @desc    Update project details
  * @route   PUT /api/projects/:id
- * @access  Private (Admin/Manager)
+ * @access  Private (Owner/Admin)
  */
 const updateProject = asyncHandler(async (req, res) => {
   const { id } = req.params;
-
-  if (!id || id === 'null' || id === 'undefined') {
-    return res.status(400).json({ message: 'Invalid Project ID' });
-  }
 
   const project = await Project.findById(id);
 
   if (!project) {
     res.status(404);
     throw new Error('Project not found');
+  }
+
+  // ⭐ Permission Check: Only Owner or Creator from the same company can update
+  const isOwner = req.user.isCompanyOwner;
+  const isCreator = project.createdBy?.toString() === req.user._id.toString();
+  const isSameCompany = project.company?.toString() === req.user.company?.toString();
+
+  if (!isSameCompany || (!isOwner && !isCreator)) {
+    res.status(403);
+    throw new Error('Only the Company Owner or project creator can update this project');
   }
 
   const updatedProject = await Project.findByIdAndUpdate(
@@ -102,14 +125,10 @@ const updateProject = asyncHandler(async (req, res) => {
 /**
  * @desc    Delete a project
  * @route   DELETE /api/projects/:id
- * @access  Private (Admin only)
+ * @access  Private (Owner only)
  */
 const deleteProject = asyncHandler(async (req, res) => {
   const { id } = req.params;
-
-  if (!id || id === 'null' || id === 'undefined') {
-    return res.status(400).json({ message: 'Invalid Project ID' });
-  }
 
   const project = await Project.findById(id);
 
@@ -118,40 +137,45 @@ const deleteProject = asyncHandler(async (req, res) => {
     throw new Error('Project not found');
   }
 
+  // ⭐ Permission Check: Strictly Company Owner from the same company
+  const isOwner = req.user.isCompanyOwner;
+  const isSameCompany = project.company?.toString() === req.user.company?.toString();
+  const isSuperAdmin = req.user.permissions?.includes('*');
+
+  if (!isSuperAdmin && (!isSameCompany || !isOwner)) {
+    res.status(403);
+    throw new Error('Deletion is restricted to the Company Owner only');
+  }
+
   await project.deleteOne();
   
-  res.status(200).json({ id: req.params.id, message: 'Project deleted successfully' });
+  res.status(200).json({ id, message: 'Project deleted successfully' });
 });
 
 /**
- * @desc    Get ONLY the assigned users for a specific project
+ * @desc    Get project team
  * @route   GET /api/projects/:id/team
- * @access  Private
  */
-const getProjectTeam = async (req, res) => {
-  try {
-    const { id } = req.params;
+const getProjectTeam = asyncHandler(async (req, res) => {
+  const { id } = req.params;
 
-    // ⭐ Bulletproof check against bad LocalStorage data hitting the DB
-    if (!id || id === 'null' || id === 'undefined') {
-      return res.status(400).json({ message: 'Invalid or missing Project ID' });
-    }
-
-    const project = await Project.findById(id).populate('assignedUsers', 'name email role');
-    
-    // Safely return a 404 response WITHOUT crashing the server
-    if (!project) {
-      return res.status(404).json({ message: 'Project not found' });
-    }
-
-    // Return the array of team members
-    res.status(200).json(project.assignedUsers);
-  } catch (error) {
-    console.error("GET PROJECT TEAM ERROR:", error);
-    // Safely catch CastErrors (e.g., malformed ObjectIds)
-    res.status(500).json({ message: 'Server error while fetching project team' });
+  if (!id || id === 'null' || id === 'undefined') {
+    return res.status(400).json({ message: 'Invalid Project ID' });
   }
-};
+
+  const project = await Project.findById(id).populate('assignedUsers', 'name email role');
+  
+  if (!project) {
+    return res.status(404).json({ message: 'Project not found' });
+  }
+
+  // ⭐ Security Check
+  if (project.company?.toString() !== req.user.company?.toString() && !req.user.permissions?.includes('*')) {
+    return res.status(403).json({ message: 'Unauthorized access to this team' });
+  }
+
+  res.status(200).json(project.assignedUsers);
+});
 
 module.exports = {
   getProjects,

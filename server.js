@@ -36,8 +36,8 @@ app.use(cors({
   credentials: true, // ⭐ Required to share cookies across domains
 }));
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '200mb' }));
+app.use(express.urlencoded({ extended: true, limit: '200mb' }));
 app.use(cookieParser());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
@@ -76,12 +76,14 @@ app.use("/api/auth", require("./routes/authRoutes"));
 app.use("/api/users", require("./routes/userRoutes"));
 app.use("/api/roles", require("./routes/roleRoutes"));
 app.use("/api/tasks", require("./routes/taskRoutes"));
+app.use("/api/issues", require("./routes/taskRoutes"));
 app.use("/api/permissions", require("./routes/permissionRoutes"));
 app.use('/api/task-statuses', taskStatusRoutes);
 app.use('/api/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use("/api/projects", require("./routes/projectRoutes"));
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/documents', documentRoutes);
+
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));

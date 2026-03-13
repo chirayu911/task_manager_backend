@@ -1,9 +1,9 @@
 const nodemailer = require('nodemailer');
-require('dotenv').config(); // Ensure env variables are loaded
+require('dotenv').config();
 
 /**
- * Reusable Email Utility with Built-in Templates
- * @param {Object} options - { to: string, templateType: string, data: Object }
+ * Handles email notifications for the Restricted Document Access System
+ * @param {Object} params - to, templateType, data
  */
 const requestMail = async ({ to, templateType, data }) => {
   try {
@@ -16,46 +16,72 @@ const requestMail = async ({ to, templateType, data }) => {
       service: 'gmail',
       auth: {
         user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS, 
+        pass: process.env.EMAIL_PASS,
       },
     });
 
     let subject = '';
     let htmlContent = '';
 
-    // Generate HTML based on the requested template type
+    // ⭐ devtunnel URL - Ensure this matches your active frontend tunnel
+    const frontendUrl = "https://fm8bp5cj-3000.inc1.devtunnels.ms";
+
     if (templateType === 'access_granted') {
-      subject = `Document Access Granted: ${data.documentTitle}`;
+      subject = `✅ Access Granted: ${data.documentTitle}`;
       htmlContent = `
-        <div style="font-family: Arial, sans-serif; padding: 20px; background-color: #f9fafb; border-radius: 10px;">
-          <h2 style="color: #111827;">Access Granted</h2>
-          <p style="color: #4b5563; line-height: 1.6;">
-            <strong>${data.uploaderName}</strong> has granted you access to the restricted document: <strong>${data.documentTitle}</strong>.
-          </p>
-          <a href="https://fm8bp5cj-3000.inc1.devtunnels.ms/documents/view/${data.docId}" 
-             style="display: inline-block; padding: 12px 24px; background-color: #10B981; color: white; text-decoration: none; border-radius: 8px; font-weight: bold; margin-top: 10px;">
-            View Document
-          </a>
+        <div style="font-family: 'Segoe UI', Arial, sans-serif; padding: 40px; background-color: #f3f4f6;">
+          <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; padding: 30px; border-radius: 16px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
+            <h2 style="color: #059669; margin-top: 0;">Permission Updated</h2>
+            <p style="color: #374151; font-size: 16px; line-height: 1.6;">
+              <strong>${data.uploaderName}</strong> has approved your request to access: <br/>
+              <span style="font-weight: bold; color: #111827;">${data.documentTitle}</span>
+            </p>
+            <div style="margin-top: 30px;">
+              <a href="${frontendUrl}/documents" 
+                 style="display: inline-block; padding: 14px 28px; background-color: #059669; color: #ffffff; text-decoration: none; border-radius: 10px; font-weight: bold; font-size: 14px;">
+                View Document Now
+              </a>
+            </div>
+          </div>
         </div>
       `;
-    } 
+    }
     else if (templateType === 'access_requested') {
-      subject = `Document Access Request: ${data.documentTitle}`;
+      subject = `🔔 New Access Request: ${data.documentTitle}`;
+
+      // ⭐ LOGIC: The path the user should land on AFTER login
+      const destinationPath = `/documents/requests/${data.requestId}`;
+      const reviewLink = `${frontendUrl}/login?redirect=${encodeURIComponent(destinationPath)}`;
+
       htmlContent = `
-        <div style="font-family: Arial, sans-serif; padding: 20px; background-color: #f9fafb; border-radius: 10px;">
-          <h2 style="color: #111827;">Access Request</h2>
-          <p style="color: #4b5563; line-height: 1.6;">
-            <strong>${data.userName}</strong> has requested access to view your restricted document: <strong>${data.documentTitle}</strong>.
-          </p>
-          <p style="color: #4b5563; margin-bottom: 20px;">
-            Please log in to your Task Manager to review the request and add them to the allowed users list.
-          </p>
-          <a href="https://fm8bp5cj-3000.inc1.devtunnels.ms/documents/edit/${data.docId}" 
-             style="display: inline-block; padding: 12px 24px; background-color: #2563eb; color: white; text-decoration: none; border-radius: 8px; font-weight: bold;">
-            Review Request
-          </a>
+        <div style="font-family: 'Segoe UI', Arial, sans-serif; padding: 40px; background-color: #f3f4f6;">
+          <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; padding: 30px; border-radius: 16px; border-top: 4px solid #2563eb;">
+            <h2 style="color: #111827; margin-top: 0;">Access Request Received</h2>
+            <p style="color: #374151; font-size: 16px;">
+              <strong>${data.userName}</strong> is asking for permission to view:
+            </p>
+            <div style="background-color: #eff6ff; padding: 15px; border-radius: 8px; color: #1e40af; font-weight: bold; margin: 20px 0;">
+              ${data.documentTitle}
+            </div>
+            <p style="color: #6b7280; font-size: 14px; margin-bottom: 25px;">
+              Clicking the button below will take you to the login page. After signing in, the approval window will open automatically.
+            </p>
+            <a href="${reviewLink}" 
+               style="display: inline-block; padding: 14px 28px; background-color: #2563eb; color: #ffffff; text-decoration: none; border-radius: 10px; font-weight: bold; font-size: 14px; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);">
+              Review & Respond
+            </a>
+          </div>
         </div>
       `;
+    }
+    else if (templateType === 'access_declined') {
+      subject = `Update on Access Request: ${data.documentTitle}`;
+      htmlContent = `
+          <div style="font-family: Arial, sans-serif; padding: 20px; background-color: #fff1f2; border-radius: 10px;">
+            <h2 style="color: #be123c;">Access Declined</h2>
+            <p style="color: #4b5563;">Your request for access to <strong>${data.documentTitle}</strong> was not approved at this time.</p>
+          </div>
+        `;
     }
 
     const mailOptions = {
@@ -65,12 +91,11 @@ const requestMail = async ({ to, templateType, data }) => {
       html: htmlContent,
     };
 
-    const info = await transporter.sendMail(mailOptions);
-    console.log(`✅ Email successfully sent to: ${to} [Template: ${templateType}]`);
-    return info;
-
+    await transporter.sendMail(mailOptions);
+    return true;
   } catch (error) {
-    console.error(`🔴 EMAIL FAILED to ${to}. Reason:`, error.message);
+    console.error(`🔴 EMAIL FAILED:`, error.message);
+    return false;
   }
 };
 

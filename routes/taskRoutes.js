@@ -7,7 +7,8 @@ const {
   getTaskById, 
   createTask, 
   updateTask, 
-  deleteTask 
+  deleteTask,
+  bulkCreateTasks 
 } = require('../controllers/taskController');
 
 // Middleware imports
@@ -34,6 +35,18 @@ router.route('/')
     ]), 
     createTask
   );
+
+/**
+ * @route   /api/tasks/bulk
+ * @desc    ⭐ Bulk Create Tasks/Issues from Excel/CSV
+ * Note: Placed above /:id to prevent route parameter collision
+ */
+router.post(
+  '/bulk', 
+  protect, 
+  checkPermission('tasks_create'), 
+  bulkCreateTasks
+);
 
 /**
  * @route   /api/tasks/:id

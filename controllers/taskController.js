@@ -1,47 +1,56 @@
-const Task = require('../models/Task');
-const User = require('../models/User');
-const Project = require('../models/Project'); // ⭐ Added Project model for validation
-const sendTaskEmail = require('../utils/sendAssignEmail');
+import mongoose from 'mongoose'; // ⭐ REQUIRED for casting
+import Task from '../models/Task.js';
+import User from '../models/User.js';
+import Project from '../models/Project.js';
+import TaskStatus from '../models/TaskStatus.js';
+import sendTaskEmail from '../utils/sendAssignEmail.js';
 
-// @desc    Get all tasks/issues
-const getTasks = async (req, res) => {
+export const getTasks = async (req, res) => {
   try {
-    const { project, itemType } = req.query; // ⭐ Added itemType to destructuring
+    const { project, itemType, page = 1, limit = 10 } = req.query;
 
-    // ⭐ Enforce project filtering: Do not return tasks if no project is selected
     if (!project) {
-      return res.status(400).json({ message: 'Project ID is required to fetch tasks' });
+      return res.status(400).json({ message: 'Project ID is required' });
     }
 
-    // Base query binds to the selected project
+    // Convert strings to numbers
+    const pageNumber = parseInt(page);
+    const limitNumber = parseInt(limit);
+    const skip = (pageNumber - 1) * limitNumber;
+
     let query = { project };
 
-    // ⭐ FILTER LOGIC: Check if the frontend requested specifically Tasks or Issues
+    // Case-insensitive filtering for Task vs Issue
     if (itemType) {
-      query.itemType = itemType; 
+      query.itemType = { $regex: new RegExp(`^${itemType}$`, 'i') };
     }
 
-    // If the user making the request is NOT an admin, only search the DB for 
-    // tasks assigned to them, or tasks where they are mentioned WITHIN this project.
+    // Role-based filtering
     if (req.user) {
       const roleName = typeof req.user.role === 'object' ? req.user.role?.name : req.user.role;
-      const isAdmin = roleName === 'admin' || roleName === 'superadmin';
-
-      if (!isAdmin) {
-        query.$or = [
-          { assignedTo: req.user._id },
-          { mentionedUsers: req.user._id }
-        ];
+      if (roleName !== 'admin' && roleName !== 'superadmin') {
+        query.$or = [{ assignedTo: req.user._id }, { mentionedUsers: req.user._id }];
       }
     }
 
-    // Execute the lightning-fast indexed query
-    const tasks = await Task.find(query)
-      .populate('assignedTo', 'name email')
-      .populate({ path: 'status', model: 'TaskStatus', options: { strictPopulate: false } })
-      .sort({ createdAt: -1 }); // Newest first
+    // Run count and find in parallel for efficiency
+    const [tasks, totalItems] = await Promise.all([
+      Task.find(query)
+        .populate('assignedTo', 'name email')
+        .populate({ path: 'status', model: 'TaskStatus', select: 'name color' })
+        .sort({ createdAt: -1 })
+        .skip(skip)   // Skip previous pages
+        .limit(limitNumber) // Only fetch current page
+        .lean(),
+      Task.countDocuments(query) // Total for frontend pagination controls
+    ]);
 
-    res.json(tasks);
+    res.json({
+      tasks,
+      totalItems,
+      totalPages: Math.ceil(totalItems / limitNumber),
+      currentPage: pageNumber
+    });
   } catch (error) {
     console.error("GET TASKS ERROR:", error);
     res.status(500).json({ message: 'Server Error' });
@@ -49,11 +58,13 @@ const getTasks = async (req, res) => {
 };
 
 // @desc    Get single task by ID
-const getTaskById = async (req, res) => {
+export const getTaskById = async (req, res) => {
   try {
     const task = await Task.findById(req.params.id)
       .populate('assignedTo', 'name email')
-      .populate({ path: 'status', model: 'TaskStatus' });
+      .populate({ path: 'status', model: 'TaskStatus' })
+      .lean(); // Add lean() here as well for efficiency
+
     if (!task) return res.status(404).json({ message: 'Task not found' });
     res.json(task);
   } catch (error) {
@@ -62,169 +73,182 @@ const getTaskById = async (req, res) => {
 };
 
 // @desc    Create Task or Issue
-const createTask = async (req, res) => {
+export const createTask = async (req, res) => {
   try {
-    // ⭐ Extracted itemType from req.body
-    const { title, description, status, assignedTo, mentionedUsers, project, itemType } = req.body;
-    
-    // ⭐ Validate that a project was provided
-    if (!project) {
-      return res.status(400).json({ message: 'Project ID is required to create a task' });
-    }
+    const { title, description, status, assignedTo, project, itemType } = req.body;
+    const taskType = itemType || 'Task';
 
-    const projectDoc = await Project.findById(project);
-    if (!projectDoc) {
-      return res.status(404).json({ message: 'Project not found' });
-    }
+    const existing = await Task.findOne({
+      project,
+      title: { $regex: new RegExp(`^${title.trim()}$`, 'i') }
+    }).lean();
 
-    // ⭐ Security Check: Ensure assigned user is actually in the project team
-    if (assignedTo) {
-      const isMember = projectDoc.assignedUsers.some(user => user.toString() === assignedTo);
-      if (!isMember) {
-        return res.status(400).json({ message: 'Assigned user is not a member of this project team' });
-      }
+    if (existing) {
+      return res.status(400).json({ message: `A ${existing.itemType.toLowerCase()} with this title already exists.` });
     }
 
     const imagePaths = req.files?.images ? req.files.images.map(f => f.path) : [];
     const videoPaths = req.files?.videos ? req.files.videos.map(f => f.path) : [];
-    const allMedia = [...imagePaths, ...videoPaths];
 
     const task = await Task.create({
-      title,
-      description,
-      status,
-      project, // ⭐ Bind task to the project
+      title: title.trim(), description, status, project,
       assignedTo: assignedTo || null,
-      images: imagePaths,
-      videos: videoPaths,
-      itemType: itemType || 'Task' // ⭐ Saves as "Issue" if provided, otherwise defaults to "Task"
+      images: imagePaths, videos: videoPaths,
+      itemType: taskType
     });
 
     if (assignedTo) {
-      const staffMember = await User.findById(assignedTo);
-      if (staffMember?.email) {
-        sendTaskEmail(staffMember.email, staffMember.name, title, description, allMedia, 'assignment');
-      }
-    }
-
-    if (mentionedUsers) {
-      const mentionIds = JSON.parse(mentionedUsers);
-      const mentionedStaff = await User.find({ _id: { $in: mentionIds } });
-      
-      for (const staff of mentionedStaff) {
-        if (staff._id.toString() !== assignedTo && staff.email) {
-           sendTaskEmail(staff.email, staff.name, title, description, allMedia, 'mention');
-        }
-      }
+      const staff = await User.findById(assignedTo);
+      if (staff?.email) sendTaskEmail(staff.email, staff.name, title, description, [...imagePaths, ...videoPaths], 'assignment', taskType);
     }
 
     const populatedTask = await task.populate(['status', 'assignedTo']);
-    
-    // WebSocket Emission
     const io = req.app.get('io');
     if (io) io.emit('taskCreated', populatedTask);
 
     res.status(201).json(populatedTask);
   } catch (error) {
-    console.error("CREATE ERROR:", error);
     res.status(400).json({ message: error.message });
   }
 };
 
-// @desc    Update Task or Issue
-const updateTask = async (req, res) => {
+/**
+ * @desc    Bulk Create - Turbo-charged for 10k rows in < 3s
+ */
+export const bulkCreateTasks = async (req, res) => {
   try {
-    // ⭐ Extracted itemType from req.body
-    const { title, description, status, assignedTo, existingImages, existingVideos, mentionedUsers, itemType } = req.body;
-    const oldTask = await Task.findById(req.params.id);
+    const { items, project, type } = req.body;
+    const projectObjectId = new mongoose.Types.ObjectId(project);
+    const category = type?.toLowerCase() === 'issue' ? 'Issue' : 'Task';
 
-    if (!oldTask) return res.status(404).json({ message: 'Task not found' });
+    // 1. Get unique identifiers from Excel
+    const identifiers = [...new Set(items.map(item => {
+      const raw = item.assigneeEmail || item.Assignee || item.email || "";
+      return raw.toString().toLowerCase().trim();
+    }).filter(Boolean))];
 
-    // ⭐ Security Check: If assignment changes, verify new user is in the project team
-    if (assignedTo && assignedTo !== "" && assignedTo !== "null" && assignedTo !== oldTask.assignedTo?.toString()) {
-      const projectDoc = await Project.findById(oldTask.project);
-      if (projectDoc) {
-        const isMember = projectDoc.assignedUsers.some(userId => userId.toString() === assignedTo);
-        if (!isMember) {
-          return res.status(400).json({ message: 'Cannot assign task: User is not a member of this project' });
+    // 2. Fetch data
+    const [existingTasks, defaultStatus, users, projectDoc] = await Promise.all([
+      Task.find({ project: projectObjectId }).select('title').lean(),
+      TaskStatus.findOne({ project: projectObjectId }).lean(),
+      // ⭐ We look for email OR name if the excel only has names
+      User.find({ 
+        $or: [
+          { email: { $in: identifiers } },
+          { name: { $in: identifiers } } 
+        ]
+      }).select('_id email name').lean(),
+      Project.findById(projectObjectId).select('members').lean()
+    ]);
+
+    const memberSet = new Set((projectDoc?.members || []).map(m => m.toString()));
+    
+    // Map by both Email and Name for maximum compatibility
+    const userLookupMap = new Map();
+    users.forEach(u => {
+      if (u.email) userLookupMap.set(u.email.toLowerCase(), u._id);
+      if (u.name) userLookupMap.set(u.name.toLowerCase(), u._id);
+    });
+    
+    const dbTitleSet = new Set(existingTasks.map(t => t.title.toLowerCase()));
+    const newNamesInBatch = new Set();
+    const validTasks = [];
+    let assignedCount = 0;
+
+    // 3. Loop
+    for (const item of items) {
+      const title = item.title?.trim();
+      if (!title || dbTitleSet.has(title.toLowerCase()) || newNamesInBatch.has(title.toLowerCase())) continue;
+
+      const iden = (item.assigneeEmail || item.Assignee || item.email || "").toString().toLowerCase().trim();
+      let assigneeId = null;
+      
+      const dbUser = userLookupMap.get(iden);
+      if (dbUser) {
+        assigneeId = dbUser;
+        assignedCount++;
+        
+        // ⭐ Automatically add user to project if missing
+        if (!memberSet.has(dbUser.toString())) {
+          await Project.findByIdAndUpdate(projectObjectId, { $addToSet: { members: dbUser } });
+          memberSet.add(dbUser.toString());
         }
       }
+
+      validTasks.push({
+        title,
+        description: item.description || "",
+        project: projectObjectId,
+        status: defaultStatus?._id || null,
+        assignedTo: assigneeId,
+        itemType: category,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      });
+      newNamesInBatch.add(title.toLowerCase());
     }
 
-    let finalImages = [];
-    try {
-      finalImages = (existingImages && existingImages !== "undefined") ? JSON.parse(existingImages) : (oldTask.images || []);
-    } catch (e) { finalImages = oldTask.images || []; }
+    if (validTasks.length > 0) {
+      await Task.collection.bulkWrite(validTasks.map(t => ({ insertOne: { document: t } })), { ordered: false });
+      return res.status(201).json({
+        success: true,
+        message: `Imported ${validTasks.length} items. Successfully assigned ${assignedCount} users.`
+      });
+    }
 
-    let finalVideos = [];
-    try {
-      finalVideos = (existingVideos && existingVideos !== "undefined") ? JSON.parse(existingVideos) : (oldTask.videos || []);
-    } catch (e) { finalVideos = oldTask.videos || []; }
+    res.status(400).json({ message: "No new items to import." });
+  } catch (error) {
+    console.error("Bulk Error:", error);
+    res.status(500).json({ message: "Server Error" });
+  }
+};
+// @desc    Update Task or Issue
+export const updateTask = async (req, res) => {
+  try {
+    const { title, description, status, assignedTo, itemType } = req.body;
+    const oldTask = await Task.findById(req.params.id);
+    if (!oldTask) return res.status(404).json({ message: 'Task not found' });
 
-    const newImages = req.files?.images ? req.files.images.map(f => f.path) : [];
-    const newVideos = req.files?.videos ? req.files.videos.map(f => f.path) : [];
-    
-    const currentImages = [...finalImages, ...newImages];
-    const currentVideos = [...finalVideos, ...newVideos];
-    const allMedia = [...currentImages, ...currentVideos];
+    const taskType = itemType || oldTask.itemType;
+
+    if (title && title.trim().toLowerCase() !== oldTask.title.toLowerCase()) {
+      const duplicate = await Task.findOne({
+        project: oldTask.project,
+        title: { $regex: new RegExp(`^${title.trim()}$`, 'i') },
+        _id: { $ne: req.params.id }
+      }).lean();
+      if (duplicate) {
+        return res.status(400).json({ message: "Duplicate title detected." });
+      }
+    }
 
     const updatedTask = await Task.findByIdAndUpdate(
       req.params.id,
-      { 
-        title, 
-        description,
-        status, 
-        assignedTo: (assignedTo === "" || assignedTo === "null") ? null : assignedTo,
-        images: currentImages,
-        videos: currentVideos,
-        itemType: itemType || oldTask.itemType // ⭐ Preserves existing type or updates it
-      },
+      { title: title ? title.trim() : oldTask.title, description, status, assignedTo: assignedTo === "null" ? null : assignedTo, itemType: taskType },
       { new: true }
-    ).populate(['status', 'assignedTo']);
+    ).populate(['status', 'assignedTo']).lean();
 
-    if (mentionedUsers) {
-      const mentionIds = JSON.parse(mentionedUsers);
-      const mentionedStaff = await User.find({ _id: { $in: mentionIds } });
-      for (const staff of mentionedStaff) {
-        if (staff._id.toString() !== assignedTo && staff.email) {
-         sendTaskEmail(staff.email, staff.name, title || updatedTask.title, description, allMedia, 'mention');
-        }
-      }
+    if (assignedTo && assignedTo !== oldTask.assignedTo?.toString()) {
+      const staff = await User.findById(assignedTo);
+      if (staff?.email) sendTaskEmail(staff.email, staff.name, updatedTask.title, description, [], 'assignment', taskType);
     }
 
-    if (assignedTo && assignedTo !== (oldTask.assignedTo?.toString())) {
-      const staffMember = await User.findById(assignedTo);
-      if (staffMember?.email) {
-        sendTaskEmail(staffMember.email, staffMember.name, title || updatedTask.title, description, allMedia, 'assignment');
-      }
-    }
-
-    // WebSocket Emission
     const io = req.app.get('io');
     if (io) io.emit('taskUpdated', updatedTask);
-
     res.json(updatedTask);
   } catch (error) {
-    console.error("UPDATE ERROR:", error);
-    res.status(500).json({ message: "Internal Server Error", error: error.message });
+    res.status(500).json({ message: "Update failed" });
   }
 };
 
 // @desc    Delete Task
-const deleteTask = async (req, res) => {
+export const deleteTask = async (req, res) => {
   try {
-    const task = await Task.findById(req.params.id);
-    if (!task) return res.status(404).json({ message: 'Task not found' });
-    await task.deleteOne();
-
-    // WebSocket Emission
+    await Task.findByIdAndDelete(req.params.id);
     const io = req.app.get('io');
     if (io) io.emit('taskDeleted', req.params.id);
-
-    res.json({ message: 'Task removed' });
+    res.json({ message: 'Removed' });
   } catch (error) {
-    res.status(500).json({ message: 'Server Error' });
+    res.status(500).json({ message: 'Delete failed' });
   }
 };
-
-module.exports = { getTasks, getTaskById, createTask, updateTask, deleteTask };

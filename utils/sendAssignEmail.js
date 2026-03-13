@@ -4,12 +4,13 @@ const path = require('path');
 /**
  * @param {string} recipientEmail - User's email
  * @param {string} staffName - User's name
- * @param {string} taskTitle - Title of task
- * @param {string} description - Task details
- * @param {Array} files - Array of file paths (images/videos)
+ * @param {string} taskTitle - Title of task/issue
+ * @param {string} description - Details
+ * @param {Array} files - Array of file paths
  * @param {string} type - 'assignment' or 'mention'
+ * @param {string} itemType - 'Task' or 'Issue' 
  */
-const sendTaskEmail = async (recipientEmail, staffName, taskTitle, description = "", files = [], type = 'assignment') => {
+const sendTaskEmail = async (recipientEmail, staffName, taskTitle, description = "", files = [], type = 'assignment', itemType = 'Task' || 'Issue') => {
   try {
     const transporter = nodemailer.createTransport({
       service: 'gmail',
@@ -22,26 +23,42 @@ const sendTaskEmail = async (recipientEmail, staffName, taskTitle, description =
       }
     });
 
-    // ⭐ Logic: Prepare attachments for Nodemailer
     const attachments = files.map(filePath => ({
       filename: path.basename(filePath),
-      path: path.resolve(filePath) // Resolves local path on your server
+      path: path.resolve(filePath) 
     }));
 
-    // ⭐ Logic: Dynamic Header and Subject based on type
+    // ⭐ Normalization: Ensure 'issue' vs 'Issue' both trigger the red theme
+    const normalizedType = itemType ? itemType.toLowerCase() : 'task';
+    const isIssue = normalizedType === 'issue';
+    const isTask = normalizedType === 'task';
     const isMention = type === 'mention';
-    const subject = isMention 
-      ? `💬 You were mentioned in: ${taskTitle}` 
-      : `📌 New Task Assigned: ${taskTitle}`;
+
+    // ⭐ UI Configuration based on Item Type
+    const headerColor = isIssue ? '#dc2626' : '#4f46e5'; // Red for Issues, Indigo for Tasks
+    const label = isTask ? 'Task' : 'Issue';
     
-    const headerColor =  '#4f46e5'; 
-    const icon = isMention ? '💬' : '📋';
+    let subject = "";
+    let icon = "";
+
+    if (isTask) {
+      icon = isMention ? '💬' : '⚠️';
+      subject = isMention 
+        ? `💬 Mentioned in Task: ${taskTitle}` 
+        : `📌 New Task Assigned: ${taskTitle}`;
+    }
+    else if (isIssue) {
+      icon = isMention ? '💬' : '📋';
+      subject = isMention 
+        ? `🚨 Mentioned in Issue: ${taskTitle}` 
+        : `🚩 New Issue Assigned: ${taskTitle}`;
+    }
 
     const mailOptions = {
       from: `"Task Management Portal" <${process.env.EMAIL_USER}>`,
       to: recipientEmail,
       subject: subject,
-      attachments: attachments, // ⭐ Files attached here
+      attachments: attachments,
       html: `
         <div style="background-color: #f9fafb; padding: 40px 0; font-family: 'Segoe UI', sans-serif;">
           <div style="max-width: 550px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08); border: 1px solid #e5e7eb;">
@@ -50,7 +67,9 @@ const sendTaskEmail = async (recipientEmail, staffName, taskTitle, description =
               <div style="display: inline-block; background: rgba(255,255,255,0.2); padding: 10px; border-radius: 12px; margin-bottom: 15px;">
                 <span style="font-size: 32px;">${icon}</span>
               </div>
-              <h2 style="color: #ffffff; margin: 0; font-size: 22px;">${isMention ? 'New Mention' : 'New Assignment'}</h2>
+              <h2 style="color: #ffffff; margin: 0; font-size: 22px;">
+                Project ${label} - ${isMention ? 'New Mention' : 'New Assignment'}
+              </h2>
             </div>
 
             <div style="padding: 40px 30px;">
@@ -58,12 +77,12 @@ const sendTaskEmail = async (recipientEmail, staffName, taskTitle, description =
               
               <p style="color: #4b5563; font-size: 15px; line-height: 1.6;">
                 ${isMention 
-                  ? `You have been mentioned in a task discussion. Review the details below:` 
-                  : `A new task has been assigned to you in the system.`}
+                  ? `You have been mentioned in an **${label.toLowerCase()}** discussion. Review the details below:` 
+                  : `A new **${label.toLowerCase()}** has been assigned to you in the system.`}
               </p>
               
               <div style="background-color: #f3f4f6; border-left: 4px solid ${headerColor}; padding: 20px; border-radius: 8px; margin: 25px 0;">
-                <span style="color: #6b7280; font-size: 11px; text-transform: uppercase; font-weight: bold;">Task Title</span>
+                <span style="color: #6b7280; font-size: 11px; text-transform: uppercase; font-weight: bold;">${label} Title</span>
                 <p style="color: #111827; font-size: 17px; font-weight: 700; margin: 5px 0 15px 0;">${taskTitle}</p>
                 
                 <span style="color: #6b7280; font-size: 11px; text-transform: uppercase; font-weight: bold;">Description</span>
@@ -75,17 +94,17 @@ const sendTaskEmail = async (recipientEmail, staffName, taskTitle, description =
               ` : ''}
 
               <div style="text-align: center; margin: 35px 0;">
-                <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/tasks" 
+                <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/${isTask ? 'tasks' : 'issues'}" 
                    style="background-color: ${headerColor}; color: #ffffff; padding: 14px 32px; text-decoration: none; border-radius: 10px; font-weight: 600; display: inline-block;">
-                   Open Task Manager
+                   View ${label}
                 </a>
               </div>
             </div>
 
             <div style="background-color: #f9fafb; padding: 20px; text-align: center; border-top: 1px solid #f3f4f6;">
               <p style="color: #9ca3af; font-size: 11px; margin: 0;">
-                Sent from the GPERI Task Automator<br/>
-                &copy; 2026 Gujarat Power Engineering and Research Institute
+                Sent from the Task Automator<br/>
+                &copy; 2026 task manager system. All rights reserved.
               </p>
             </div>
           </div>
@@ -94,7 +113,7 @@ const sendTaskEmail = async (recipientEmail, staffName, taskTitle, description =
     };
 
     await transporter.sendMail(mailOptions);
-    console.log(`✅ ${type.toUpperCase()} email sent to ${recipientEmail}`);
+    console.log(`✅ ${label} ${type.toUpperCase()} email sent to ${recipientEmail}`);
   } catch (error) {
     console.error('❌ Mailer Error:', error.message);
   }

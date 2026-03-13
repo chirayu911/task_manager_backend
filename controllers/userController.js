@@ -21,6 +21,21 @@ const getFlattenedPermissions = async (roleId) => {
   }
 };
 
+// userController.js
+exports.updatePreference = async (req, res) => {
+  try {
+    const { autoSaveEnabled } = req.body;
+    const user = await User.findByIdAndUpdate(
+      req.user._id,
+      { 'preferences.autoSaveEnabled': autoSaveEnabled },
+      { new: true }
+    );
+    res.status(200).json(user.preferences);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
 // ================= LOGIN =================
 const loginUser = asyncHandler(async (req, res) => {
   const { email, username, password } = req.body;

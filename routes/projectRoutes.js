@@ -1,19 +1,22 @@
 const express = require('express');
 const router = express.Router();
 
-// ⭐ This import will crash with [object Undefined] if the Controller file is missing the module.exports
+// ⭐ Imports from your project controller
 const { 
   getProjects, 
   getProjectById, 
   createProject, 
   updateProject, 
   deleteProject,
-  getProjectTeam
+  getProjectTeam // ⭐ This handles fetching the users for your search bar
 } = require('../controllers/projectController');
 
 const { protect } = require('../middleware/authMiddleware');
 const checkPermission = require('../middleware/checkPermission');
 
+// ==========================================
+// 1. Collection Routes
+// ==========================================
 router.route('/')
   .get(
     protect, 
@@ -26,6 +29,17 @@ router.route('/')
     createProject
   );
 
+// ==========================================
+// 2. Specialized Project Routes
+// ==========================================
+// ⭐ This must be protected so only logged-in users can see team members
+// The frontend uses this to populate the "bubble" search and access table
+router.get('/:id/users', protect, getProjectTeam); 
+router.get('/:id/team', protect, getProjectTeam); // Added /team alias for compatibility
+
+// ==========================================
+// 3. ID-Specific Routes
+// ==========================================
 router.route('/:id')
   .get(
     protect, 
@@ -42,6 +56,5 @@ router.route('/:id')
     checkPermission('projects_delete'), 
     deleteProject
   );
-  router.get('/:id/team', getProjectTeam);
 
 module.exports = router;
