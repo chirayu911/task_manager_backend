@@ -1,8 +1,12 @@
 const Document = require('../models/Document');
 const User = require('../models/User');
+const DocumentPage = require('../models/DocumentPage'); // Added for .doc pages
+const Company = require('../models/Company');           // Added for PDF headers
+const PDFDocument = require('pdfkit');                  // Added for PDF generation
 const fs = require('fs');
 const path = require('path');
 const requestMail = require('../utils/requestMail');
+const { buildCompanyPDF } = require('../utils/pdfGenerator');
 
 // Helper to notify users (restored original notification logic)
 async function notifySharedUsers(doc, ownerName) {
@@ -39,7 +43,6 @@ exports.createDocument = async (req, res) => {
       allowedUsers = typeof usersInput === 'string' ? JSON.parse(usersInput) : usersInput;
     }
 
-    // ⭐ Separate IDs for the new schema arrays
     const readOnlyUsers = allowedUsers.filter(u => !u.canEdit).map(u => u.userId);
     const canEditUsers = allowedUsers.filter(u => u.canEdit).map(u => u.userId);
 
@@ -179,7 +182,6 @@ exports.grantAccess = async (req, res) => {
 
     document.accessRequests.pull(requestId);
 
-    // ⭐ Logic: Add to readOnlyUsers if not already present anywhere
     const isAlreadyMember = document.readOnlyUsers.includes(targetUserId) || document.canEditUsers.includes(targetUserId);
     if (!isAlreadyMember) {
       document.readOnlyUsers.push(targetUserId);
@@ -227,16 +229,40 @@ exports.declineAccess = async (req, res) => {
 // ==========================================
 // 7. Standard CRUD
 // ==========================================
+// ==========================================
+// 7. Standard CRUD (Updated to include DocumentPages)
+// ==========================================
 exports.getDocumentById = async (req, res) => {
   try {
+    // 1. Fetch the main Document
     const doc = await Document.findById(req.params.id)
       .populate('uploadedBy', 'name email')
       .populate('readOnlyUsers', 'name email')
       .populate('canEditUsers', 'name email');
       
     if (!doc) return res.status(404).json({ message: "Document not found." });
-    res.status(200).json(doc);
+
+    // 2. Convert Mongoose document to a plain JavaScript object
+    // This allows us to inject new properties (like 'pages') that aren't strictly in the schema
+    const docResponse = doc.toObject();
+
+    // 3. Fetch all associated pages from the DocumentPage dataset
+    const pages = await DocumentPage.find({ documentId: doc._id }).sort({ pageNo: 1 });
+
+    // 4. Attach the pages to the document object
+    docResponse.pages = pages;
+
+    // 5. Keep the frontend happy: If there are pages, combine their content 
+    // into the main 'content' field so the TextEditor loads it immediately.
+    if (pages && pages.length > 0) {
+      docResponse.content = pages.map(p => p.content).join('\n');
+    }
+
+    // 6. Send the merged object back to the frontend
+    res.status(200).json(docResponse);
+
   } catch (error) {
+    console.error("🔴 GET DOC BY ID ERROR:", error);
     res.status(500).json({ message: "Error fetching document." });
   }
 };
@@ -246,10 +272,14 @@ exports.deleteDocument = async (req, res) => {
     const deletedDoc = await Document.findByIdAndDelete(req.params.id);
     if (!deletedDoc) return res.status(404).json({ message: "Document not found." });
     
+    // ⭐ Cleanup: Delete physical file if it exists
     if (deletedDoc.fileUrl) {
       const filePath = path.join(__dirname, '..', deletedDoc.fileUrl);
       if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
     }
+    
+    // ⭐ Cleanup: Delete associated Document Pages for .doc files
+    await DocumentPage.deleteMany({ documentId: deletedDoc._id });
     
     res.status(200).json({ message: "Document deleted." });
   } catch (error) {
@@ -258,11 +288,12 @@ exports.deleteDocument = async (req, res) => {
 };
 
 // ==========================================
-// 8. Save/Autosave Text Document (Fixed logic)
+// 8. Save/Autosave Text Document (Handles .TXT and .DOC PDF Prep)
 // ==========================================
 exports.saveTextDocument = async (req, res) => {
   try {
-    const { title, project, accessType, content, allowedUsers: usersInput, documentId } = req.body;
+    // ⭐ Added fileExtension parameter to determine if it's .txt or .doc
+    const { title, project, accessType, content, allowedUsers: usersInput, documentId, fileExtension } = req.body;
     if (!req.user?._id) return res.status(401).json({ message: "Auth required" });
 
     let allowedUsers = [];
@@ -273,27 +304,40 @@ exports.saveTextDocument = async (req, res) => {
     const readOnlyUsers = allowedUsers.filter(u => !u.canEdit).map(u => u.userId);
     const canEditUsers = allowedUsers.filter(u => u.canEdit).map(u => u.userId);
 
-    // ⭐ CASE 1: If documentId is present, we are UPDATING
+    // Determine target file type
+    const targetFileType = fileExtension?.toUpperCase() === 'DOC' ? 'DOC' : 'TXT';
+
+    // ⭐ CASE 1: Updating an existing document
     if (documentId) {
       const doc = await Document.findById(documentId);
       if (doc) {
-        // Dirty check: Skip if content hasn't actually changed
         if (doc.content === content && doc.title === (title || doc.title)) {
           return res.status(200).json(doc);
         }
 
         doc.title = title || doc.title;
-        doc.content = content;
+        doc.content = content; // Fallback content storage
         doc.readOnlyUsers = readOnlyUsers;
         doc.canEditUsers = canEditUsers;
         doc.lastSavedAt = Date.now();
+        doc.fileType = targetFileType; // Update type based on frontend choice
 
         await doc.save();
+
+        // If it's a .doc, update or create the associated page for PDF generation
+        if (targetFileType === 'DOC') {
+          await DocumentPage.findOneAndUpdate(
+            { documentId: doc._id, pageNo: 1 },
+            { content: content },
+            { upsert: true, new: true } // Creates it if it doesn't exist yet
+          );
+        }
+
         return res.status(200).json(doc); 
       }
     }
 
-    // ⭐ CASE 2: Only create a NEW document if no ID was provided
+    // ⭐ CASE 2: Creating a NEW document
     const newDoc = new Document({
       title: title || 'Untitled',
       project,
@@ -303,10 +347,20 @@ exports.saveTextDocument = async (req, res) => {
       readOnlyUsers,
       canEditUsers,
       uploadedBy: req.user._id,
-      fileType: 'HTML'
+      fileType: targetFileType // Sets as TXT or DOC
     });
 
     await newDoc.save();
+
+    // If saving as .doc, create the initial page layout
+    if (targetFileType === 'DOC') {
+      await DocumentPage.create({
+        documentId: newDoc._id,
+        pageNo: 1,
+        content: content || ''
+      });
+    }
+
     if (readOnlyUsers.length > 0 || canEditUsers.length > 0) {
         await notifySharedUsers(newDoc, req.user.name);
     }
@@ -367,5 +421,48 @@ exports.updateDocument = async (req, res) => {
   } catch (error) {
     console.error("🔴 UPDATE DOC ERROR:", error);
     res.status(500).json({ message: "Failed to update document." });
+  }
+};
+
+// ==========================================
+// 10. Generate PDF (.doc only) with Company Branding
+// ==========================================
+exports.generateDocumentPDF = async (req, res) => {
+  try {
+    // 1. Fetch Document
+    const docData = await Document.findById(req.params.id).populate('uploadedBy');
+    
+    if (!docData || docData.fileType !== 'DOC') {
+      return res.status(400).json({ message: 'PDF generation only supported for .doc files' });
+    }
+
+    // 2. Fetch Company Data (with fallbacks)
+    let companyData = {
+      companyName: "Organization Document",
+      companyEmail: "",
+      fullAddress: ""
+    };
+
+    if (req.user && req.user.company) {
+      const company = await Company.findById(req.user.company);
+      if (company) {
+        companyData = company;
+      }
+    }
+
+    // 3. Fetch Document Pages
+    const pages = await DocumentPage.find({ documentId: docData._id }).sort({ pageNo: 1 });
+    if (!pages || pages.length === 0) {
+      return res.status(404).json({ message: "No content pages found for this document." });
+    }
+
+    // ⭐ 4. Delegate the rendering to our new utility file!
+    buildCompanyPDF(res, docData, companyData, pages);
+
+  } catch (error) {
+    console.error("🔴 PDF GEN ERROR:", error);
+    if (!res.headersSent) {
+      res.status(500).json({ message: "Failed to generate PDF." });
+    }
   }
 };

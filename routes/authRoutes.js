@@ -1,23 +1,37 @@
 const express = require('express');
 const router = express.Router();
 
-// Destructure functions from the controller
+// ⭐ Destructure all functions from the updated authController
 const { 
+  registerUser,
+  registerCompany,    // ⭐ Handles combined Address string and User/Company linking
   loginUser, 
   logoutUser, 
   getMe,
+  updatePreferences, 
   forgotPassword, 
   resetPassword   
-} = require('../controllers/userController'); 
+} = require('../controllers/authController'); 
 
 const { protect } = require('../middleware/authMiddleware');
 
-// Auth Routes
+// ================= AUTH & SESSION =================
+// Note: loginUser now sets the 'jwt' cookie and populates company info
 router.post('/login', loginUser);   
 router.post('/logout', logoutUser); 
-router.get('/me', protect, getMe);  
+router.get('/me', protect, getMe); 
+ 
+// ================= REGISTRATION =================
+// Standard registration for users without a company (or assigned later)
+router.post('/register', registerUser);            
 
-// Password Reset Routes
+// ⭐ Main entry for Company Owners: Creates Company and User in one flow
+router.post('/register-company', registerCompany); 
+
+// ================= USER SETTINGS =================
+router.put('/preferences', protect, updatePreferences);
+
+// ================= PASSWORD RESET =================
 router.post('/forgotpassword', forgotPassword);
 router.put('/resetpassword/:resettoken', resetPassword);
 

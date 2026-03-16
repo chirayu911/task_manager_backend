@@ -1,9 +1,5 @@
 const mongoose = require('mongoose');
 
-/**
- * Document Model
- * Supports both physical file uploads and CKEditor rich-text documents.
- */
 const documentSchema = new mongoose.Schema({
   title: { 
     type: String, 
@@ -27,14 +23,10 @@ const documentSchema = new mongoose.Schema({
     default: 'file'
   },
   
+  // ⭐ Used when type === 'file'
   fileUrl: { 
     type: String, 
     required: function() { return this.type === 'file'; }
-  },
-  
-  content: { 
-    type: String, 
-    required: function() { return this.type === 'text'; }
   },
   
   originalName: String, 
@@ -52,8 +44,6 @@ const documentSchema = new mongoose.Schema({
     default: 'public'
   },
   
-  // ⭐ UPDATED: Dedicated arrays for different permission levels
-  // Use this if you want to store them as simple ID lists
   readOnlyUsers: [{ 
     type: mongoose.Schema.Types.ObjectId, 
     ref: 'User' 
@@ -63,10 +53,6 @@ const documentSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId, 
     ref: 'User' 
   }],
-
-  // OR Keep the original object-based structure which is more flexible
-  // but ensures both userId and permission are explicitly stored
- 
 
   accessRequests: [{
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
@@ -80,14 +66,14 @@ const documentSchema = new mongoose.Schema({
     default: Date.now 
   }
 }, { 
-  timestamps: true 
+  timestamps: true,
+  toJSON: { virtuals: true }, // Ensure virtuals show up in API responses
+  toObject: { virtuals: true }
 });
 
-// Updated Indexing for new fields
+// Indexing
 documentSchema.index({ project: 1, title: 1 });
-documentSchema.index({ 'allowedUsers.userId': 1 });
-documentSchema.index({ readOnlyUsers: 1 }); // Index for fast lookup
-documentSchema.index({ canEditUsers: 1 });  // Index for fast lookup
-documentSchema.index({ 'accessRequests._id': 1 });
+documentSchema.index({ readOnlyUsers: 1 });
+documentSchema.index({ canEditUsers: 1 });
 
 module.exports = mongoose.model('Document', documentSchema);

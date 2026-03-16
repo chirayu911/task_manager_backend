@@ -10,18 +10,17 @@ const projectSchema = new mongoose.Schema({
     type: String, 
     trim: true 
   },
-  // ⭐ Multi-Tenancy: Every project belongs to a specific company
+  // ⭐ Multi-Tenancy Anchor
   company: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Company',
     required: true
   },
-  // Array of ObjectIds to store multiple assigned users
+  // Users within the same company assigned to this project
   assignedUsers: [{ 
     type: mongoose.Schema.Types.ObjectId, 
     ref: 'User' 
   }],
-  // The person who created the project
   createdBy: { 
     type: mongoose.Schema.Types.ObjectId, 
     ref: 'User',
@@ -29,7 +28,7 @@ const projectSchema = new mongoose.Schema({
   }
 }, { timestamps: true });
 
-// Indexing by company will make project lookups much faster as your database grows
+// Ensure queries like Project.find({ company: userCompany }) are indexed
 projectSchema.index({ company: 1 });
 
 module.exports = mongoose.model('Project', projectSchema);

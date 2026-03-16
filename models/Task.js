@@ -11,15 +11,18 @@ const taskSchema = new mongoose.Schema({
     trim: true,
     default: ''
   },
-  
-  // ⭐ NEW: This field differentiates between Tasks and Issues
   itemType: {
     type: String,
-    enum: ['Task', 'Issue'], // Restricts the value to only these two options
-    default: 'Task',         // Defaults to 'Task' if nothing is provided
+    enum: ['Task', 'Issue'],
+    default: 'Task',
     required: true
   },
-
+  // ⭐ Multi-Tenancy Anchor: Every task belongs to a specific company
+  company: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Company',
+    required: true
+  },
   project: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Project',
@@ -45,19 +48,17 @@ const taskSchema = new mongoose.Schema({
   ],
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
+    ref: 'User',
+    required: true
   }
 }, {
   timestamps: true 
 });
 
-// ⭐ GOAL 3: DATABASE INDEXES FOR MASSIVE PERFORMANCE BOOST
+// ⭐ PERFORMANCE INDEXES
+taskSchema.index({ company: 1 }); // Essential for multi-tenant isolation
 taskSchema.index({ assignedTo: 1 });
 taskSchema.index({ status: 1 });
-taskSchema.index({ mentionedUsers: 1 });
-taskSchema.index({ createdAt: -1 }); 
-
-// ⭐ NEW INDEX: Makes filtering by "Tasks" vs "Issues" lightning fast
 taskSchema.index({ itemType: 1 }); 
 
 module.exports = mongoose.model('Task', taskSchema);

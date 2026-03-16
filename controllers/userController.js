@@ -9,7 +9,10 @@ const jwt = require('jsonwebtoken');
 const { sendWelcomeEmail, sendEmail } = require('../utils/sendEmail');
 
 // ================= PERMISSION HELPER =================
-const getFlattenedPermissions = async (roleId) => {
+const getFlattenedPermissions = async (roleId, isCompanyOwner = false) => {
+  // ⭐ If the user is a Company Owner, they automatically get the wildcard permission
+  if (isCompanyOwner) return ['*'];
+  
   if (!roleId) return [];
   try {
     const roleObj = await Role.findById(roleId).populate('permissions');
@@ -39,7 +42,6 @@ exports.updatePreference = async (req, res) => {
 // ================= LOGIN =================
 const loginUser = asyncHandler(async (req, res) => {
   const { email, username, password } = req.body;
-  
   const loginIdentifier = username || email;
 
   if (!loginIdentifier || !password) {
@@ -47,7 +49,6 @@ const loginUser = asyncHandler(async (req, res) => {
     throw new Error('Please provide a username/email and password');
   }
 
-  // Find user by username OR email, and explicitly select the hidden password field
   const user = await User.findOne({ 
     $or: [
       { email: loginIdentifier }, 
@@ -61,12 +62,12 @@ const loginUser = asyncHandler(async (req, res) => {
   }
 
   const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '30d' });
-  const permissions = await getFlattenedPermissions(user.role?._id);
+  const permissions = await getFlattenedPermissions(user.role?._id, user.isCompanyOwner);
 
   res.cookie('jwt', token, {
     httpOnly: true,
-    secure: true,      // Must be true for 'none' sameSite
-    sameSite: 'none',  // Essential for Dev Tunnels/Cross-site
+    secure: true,
+    sameSite: 'none',
     maxAge: 30 * 24 * 60 * 60 * 1000
   });
 
@@ -76,6 +77,8 @@ const loginUser = asyncHandler(async (req, res) => {
     username: user.username,
     email: user.email,
     role: user.role?.name || 'No Role',
+    company: user.company,       // ⭐ Include company ID in response
+    isCompanyOwner: user.isCompanyOwner, // ⭐ Include owner status
     permissions
   });
 });
@@ -93,8 +96,10 @@ const logoutUser = asyncHandler(async (req, res) => {
 
 // ================= GET ME =================
 const getMe = asyncHandler(async (req, res) => {
+  // ⭐ FIX: Added .populate('company') to ensure the full object is returned
   const user = await User.findById(req.user.id || req.user._id)
     .populate('role')
+    .populate('company') 
     .select('-password');
 
   if (!user) {
@@ -110,30 +115,40 @@ const getMe = asyncHandler(async (req, res) => {
     username: user.username,
     email: user.email,
     role: user.role?.name || 'No Role',
-    permissions
+    // ⭐ Flatten permissions and handle Owner wildcard
+    permissions: user.isCompanyOwner ? ['*'] : permissions,
+    isCompanyOwner: user.isCompanyOwner,
+    company: user.company // This will now be the full Company object
   });
 });
 
-// ================= GET USERS =================
+// ================= GET USERS (Scoped to Company) =================
 const getUsers = asyncHandler(async (req, res) => {
-  const users = await User.find().populate('role', 'name').select('-password');
+  // ⭐ Filter: Only return users belonging to the requester's company
+  const users = await User.find({ company: req.user.company })
+    .populate('role', 'name')
+    .select('-password');
   res.json(users);
 });
 
-// ================= GET USER BY ID =================
+// ================= GET USER BY ID (Scoped to Company) =================
 const getUserById = asyncHandler(async (req, res) => {
-  const user = await User.findById(req.params.id)
+  // ⭐ Secure check: Target user must belong to the requester's company
+  const user = await User.findOne({ 
+    _id: req.params.id, 
+    company: req.user.company 
+  })
     .populate('role', 'name')
     .select('-password');
 
   if (!user) {
     res.status(404);
-    throw new Error('User not found');
+    throw new Error('User not found or access denied');
   }
   res.json(user);
 });
 
-// ================= CREATE USER =================
+// ================= CREATE USER (Auto-Assign Company) =================
 const registerUser = asyncHandler(async (req, res) => {
   const { name, email, username, role } = req.body;
 
@@ -148,15 +163,17 @@ const registerUser = asyncHandler(async (req, res) => {
     throw new Error('User already exists');
   }
 
-  // Generate Plain Password
   const plainPassword = crypto.randomBytes(5).toString('hex');
 
+  // ⭐ Auto-assign the creator's company to the new user
   const user = await User.create({
     name,
     email,
     username,
-    password: plainPassword, // Mongoose pre('save') hook handles the hashing
-    role
+    password: plainPassword,
+    role,
+    company: req.user.company, // ⭐ Link to same company
+    isCompanyOwner: false      // Newly created staff aren't company owners
   });
 
   if (user) {
@@ -182,12 +199,17 @@ const registerUser = asyncHandler(async (req, res) => {
   }
 });
 
-// ================= UPDATE USER =================
+// ================= UPDATE USER (Scoped to Company) =================
 const updateUser = asyncHandler(async (req, res) => {
-  const user = await User.findById(req.params.id);
+  // ⭐ Ensure the user being updated belongs to the requester's company
+  const user = await User.findOne({ 
+    _id: req.params.id, 
+    company: req.user.company 
+  });
+
   if (!user) {
     res.status(404);
-    throw new Error('User not found');
+    throw new Error('User not found or access denied');
   }
 
   const oldRoleId = user.role?.toString();
@@ -198,7 +220,6 @@ const updateUser = asyncHandler(async (req, res) => {
   user.role = req.body.role || user.role;
 
   if (req.body.password) {
-    // Setting the password here triggers the Mongoose pre-save hook to hash it automatically
     user.password = req.body.password;
   }
 
@@ -215,12 +236,23 @@ const updateUser = asyncHandler(async (req, res) => {
   res.json({ message: "User updated successfully" });
 });
 
-// ================= DELETE USER =================
+// ================= DELETE USER (Scoped to Company) =================
 const deleteUser = asyncHandler(async (req, res) => {
-  const user = await User.findById(req.params.id);
+  // ⭐ Verify target user is in the same company
+  const user = await User.findOne({ 
+    _id: req.params.id, 
+    company: req.user.company 
+  });
+
   if (!user) {
     res.status(404);
-    throw new Error('User not found');
+    throw new Error('User not found or access denied');
+  }
+
+  // Prevent owners from accidentally deleting themselves via the staff panel
+  if (user._id.toString() === req.user._id.toString()) {
+    res.status(400);
+    throw new Error('You cannot delete your own account from here');
   }
 
   const userId = user._id.toString();
@@ -246,11 +278,9 @@ const forgotPassword = asyncHandler(async (req, res) => {
   const resetToken = user.getResetPasswordToken();
   await user.save({ validateBeforeSave: false });
 
-  // Safely remove any trailing slashes from the FRONTEND_URL to prevent double-slash bugs
   const baseUrl = (process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '');
   const resetUrl = `${baseUrl}/reset-password/${resetToken}`;
 
-  // Message includes safe quotation marks around the href attribute
   const message = `
     <h1>Task Manager - Password Reset</h1>
     <p>You requested a password reset. Please click on the following link to reset your password. This link is valid for 15 minutes.</p>
@@ -268,7 +298,6 @@ const forgotPassword = asyncHandler(async (req, res) => {
     res.status(200).json({ message: 'If that email exists, a reset link has been sent.' });
   } catch (error) {
     console.error("EMAIL SEND ERROR:", error);
-    
     user.resetPasswordToken = undefined;
     user.resetPasswordExpire = undefined;
     await user.save({ validateBeforeSave: false });
@@ -296,7 +325,6 @@ const resetPassword = asyncHandler(async (req, res) => {
   }
 
   user.password = req.body.password;
-  
   user.resetPasswordToken = undefined;
   user.resetPasswordExpire = undefined;
   await user.save();

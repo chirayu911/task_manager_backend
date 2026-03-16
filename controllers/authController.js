@@ -2,12 +2,13 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const asyncHandler = require('express-async-handler');
 const User = require('../models/User');
+const Company = require('../models/Company'); 
 const { sendEmail } = require('../utils/sendEmail');
 
 // Generate JWT Helper
 const generateToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, {
-    expiresIn: '30d', // Token expires in 30 days
+    expiresIn: '30d', 
   });
 };
 
@@ -24,20 +25,17 @@ const registerUser = asyncHandler(async (req, res) => {
     throw new Error('Please add all required fields');
   }
 
-  // Check if user already exists
   const userExists = await User.findOne({ email });
   if (userExists) {
     res.status(400);
     throw new Error('User already exists');
   }
 
-  // Create user (Password hashing is handled automatically by the pre-save hook in the User model)
   const user = await User.create({
     name,
     email,
     password,
     username,
-    // Note: If you have a default role (like 'staff'), you can assign its ObjectId here
   });
 
   if (user) {
@@ -60,34 +58,30 @@ const registerUser = asyncHandler(async (req, res) => {
  * @access  Public
  */
 const loginUser = asyncHandler(async (req, res) => {
-  // ⭐ UPDATED: Accept either email or username from the frontend request
   const { email, username, password } = req.body;
-  
   const loginIdentifier = username || email;
 
-  if (!loginIdentifier || !password) {
-    res.status(400);
-    throw new Error('Please provide a username/email and password');
-  }
-
-  // ⭐ UPDATED: Check for user by matching EITHER the email or the username field
   const user = await User.findOne({ 
-    $or: [
-      { email: loginIdentifier }, 
-      { username: loginIdentifier }
-    ] 
-  }).populate('role').select('+password');
+    $or: [{ email: loginIdentifier }, { username: loginIdentifier }] 
+  }).populate('role').populate('company').select('+password');
 
-  // Check password using the method we created in the User model
   if (user && (await user.matchPassword(password))) {
+    const token = generateToken(user._id);
+
+    res.cookie('jwt', token, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'none',
+      maxAge: 30 * 24 * 60 * 60 * 1000 
+    });
+
     res.json({
       _id: user.id,
       name: user.name,
       email: user.email,
-      username: user.username,
-      role: user.role,
-      permissions: user.permissions,
-      token: generateToken(user._id),
+      company: user.company,
+      isCompanyOwner: user.isCompanyOwner,
+      permissions: user.isCompanyOwner ? ['*'] : (user.role?.permissions || []),
     });
   } else {
     res.status(401);
@@ -101,37 +95,139 @@ const loginUser = asyncHandler(async (req, res) => {
  * @access  Private
  */
 const getMe = asyncHandler(async (req, res) => {
-  // req.user is set by your authMiddleware
-  const user = await User.findById(req.user.id).populate('role');
-  res.status(200).json(user);
+  const user = await User.findById(req.user.id || req.user._id)
+    .populate('role')
+    .populate('company')
+    .select('-password');
+
+  if (!user) {
+    res.status(404);
+    throw new Error('User not found');
+  }
+
+  res.json({
+    _id: user._id,
+    name: user.name,
+    username: user.username,
+    email: user.email,
+    role: user.role?.name || 'No Role',
+    permissions: user.isCompanyOwner ? ['*'] : (user.role?.permissions || []), 
+    isCompanyOwner: user.isCompanyOwner,
+    company: user.company
+  });
 });
 
 /**
- * @desc    Forgot Password - Generates token and sends email
- * @route   POST /api/auth/forgotpassword
+ * @desc    Logout user
+ * @route   POST /api/auth/logout
  * @access  Public
+ */
+const logoutUser = asyncHandler(async (req, res) => {
+  res.cookie('jwt', '', { httpOnly: true, expires: new Date(0) });
+  res.status(200).json({ message: 'Logged out successfully' });
+});
+
+/**
+ * @desc    Update User Preferences
+ */
+const updatePreferences = asyncHandler(async (req, res) => {
+  const { autoSaveEnabled } = req.body;
+  
+  const user = await User.findByIdAndUpdate(
+    req.user._id,
+    { $set: { "preferences.autoSaveEnabled": autoSaveEnabled } },
+    { new: true }
+  );
+
+  if (!user) {
+    res.status(404);
+    throw new Error("User not found");
+  }
+
+  res.status(200).json({ 
+    message: "Preferences updated", 
+    preferences: user.preferences 
+  });
+});
+
+/**
+ * @desc    Register a new company and its owner
+ * @route   POST /api/auth/register-company
+ * @access  Public
+ */
+const registerCompany = asyncHandler(async (req, res) => {
+  const {
+    companyName, owner, username, email, password,
+    streetAddress, city, state, zipCode, country,
+    phoneNumber, nominalCapital, industry, companyEmail
+  } = req.body;
+
+  if (!username || !email || !password || !companyName) {
+    res.status(400);
+    throw new Error('Please fill out all required fields.');
+  }
+
+  const userExists = await User.findOne({ $or: [{ email }, { username }] });
+  if (userExists) {
+    res.status(400);
+    throw new Error('Email or Username is already taken.');
+  }
+
+  // ⭐ 1. Combine Address fields into one string
+  const fullAddress = `${streetAddress}, ${city}, ${state} ${zipCode}, ${country}`;
+
+  // ⭐ 2. Create the Company first (to get the ID)
+  const company = await Company.create({
+    companyName,
+    ownerName: owner,
+    fullAddress, // matches your updated model
+    companyEmail, 
+    phoneNumber, 
+    nominalCapital, 
+    industry
+  });
+
+  // ⭐ 3. Create the User with the Company ID (prevents validation error)
+  const user = await User.create({
+    name: owner,
+    email,
+    username, 
+    password,
+    role: ['company owner'],
+    company: company._id, // Linking here satisfies 'required: true'
+    isCompanyOwner: true,
+    permissions: ["*"]
+  });
+
+  // ⭐ 4. Finalize Company owner link
+  company.ownerId = user._id;
+  await company.save();
+
+  res.status(201).json({
+    message: 'Company and Owner registered successfully',
+    _id: user.id,
+    name: user.name,
+    username: user.username,
+    email: user.email,
+    isCompanyOwner: user.isCompanyOwner,
+    company: company
+  });
+});
+
+/**
+ * @desc    Forgot Password
  */
 const forgotPassword = asyncHandler(async (req, res) => {
   const user = await User.findOne({ email: req.body.email });
+  if (!user) return res.status(200).json({ message: 'Email sent if user exists.' });
 
-  if (!user) {
-    // Return a 200 even if the user isn't found to prevent email enumeration attacks by hackers
-    return res.status(200).json({ message: 'If that email exists, a reset link has been sent.' });
-  }
-
-  // Get unhashed token (this method also sets the hashed token and expiration on the user object)
   const resetToken = user.getResetPasswordToken();
   await user.save({ validateBeforeSave: false });
 
-  // Create reset URL targeting your React frontend
-  const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password/${resetToken}`;
+  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+  const resetUrl = `${frontendUrl}/reset-password/${resetToken}`;
 
-  const message = `
-    <h1>TaskFlow - Password Reset</h1>
-    <p>You requested a password reset. Please click on the following link to reset your password. This link is valid for 15 minutes.</p>
-    <a href=${resetUrl} clicktracking=off>${resetUrl}</a>
-    <p>If you did not request this, please ignore this email.</p>
-  `;
+  const message = `<h1>Password Reset Request</h1><p>Click below to reset:</p><a href="${resetUrl}">${resetUrl}</a>`;
 
   try {
     await sendEmail({
@@ -139,28 +235,20 @@ const forgotPassword = asyncHandler(async (req, res) => {
       subject: 'Task Manager - Password Reset Request',
       text: message,
     });
-
-    res.status(200).json({ message: 'If that email exists, a reset link has been sent.' });
+    res.status(200).json({ message: 'Reset link has been sent.' });
   } catch (error) {
-    console.error("EMAIL SEND ERROR:", error);
-    
-    // If the email fails to send, clear the token from the database so it can't be exploited
     user.resetPasswordToken = undefined;
     user.resetPasswordExpire = undefined;
     await user.save({ validateBeforeSave: false });
-
     res.status(500);
-    throw new Error('Email could not be sent. Please contact an administrator.');
+    throw new Error('Email could not be sent.');
   }
 });
 
 /**
- * @desc    Reset Password - Verifies token and saves new password
- * @route   PUT /api/auth/resetpassword/:resettoken
- * @access  Public
+ * @desc    Reset Password
  */
 const resetPassword = asyncHandler(async (req, res) => {
-  // Reconstruct the hashed token from the URL parameter to compare with the one saved in the database
   const resetPasswordToken = crypto
     .createHash('sha256')
     .update(req.params.resettoken)
@@ -168,7 +256,7 @@ const resetPassword = asyncHandler(async (req, res) => {
 
   const user = await User.findOne({
     resetPasswordToken,
-    resetPasswordExpire: { $gt: Date.now() }, // Ensure the token hasn't expired yet
+    resetPasswordExpire: { $gt: Date.now() },
   });
 
   if (!user) {
@@ -176,21 +264,21 @@ const resetPassword = asyncHandler(async (req, res) => {
     throw new Error('Invalid or expired reset token');
   }
 
-  // Set the new password (the pre-save hook in the User model will automatically hash it)
   user.password = req.body.password;
-  
-  // Clear the reset token fields so the link cannot be used a second time
   user.resetPasswordToken = undefined;
   user.resetPasswordExpire = undefined;
   await user.save();
 
-  res.status(200).json({ message: 'Password reset successful. You can now log in.' });
+  res.status(200).json({ message: 'Password reset successful.' });
 });
 
 module.exports = {
   registerUser,
   loginUser,
+  logoutUser,
   getMe,
+  updatePreferences,
+  registerCompany,
   forgotPassword,
   resetPassword,
 };

@@ -9,6 +9,7 @@ const taskStatusRoutes = require('./routes/taskStatusRoutes');
 const path = require('path');
 const session = require('express-session');
 const subscriptionRoutes = require('./routes/subscriptionRoutes');
+const companyRoutes = require('./routes/companyRoutes');
 
 dotenv.config();
 connectDB();
@@ -83,6 +84,8 @@ app.use('/api/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use("/api/projects", require("./routes/projectRoutes"));
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/documents', documentRoutes);
+app.use('/api/company', companyRoutes);
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 
 const PORT = process.env.PORT || 5000;

@@ -14,12 +14,12 @@ const getProjects = asyncHandler(async (req, res) => {
 
   let query = {};
 
-  // 2. Filter Logic
+  // 2. Filter Logic: Mandatory Company Isolation
   if (!isSuperAdmin) {
-    // Everyone except SuperAdmin is locked to their own company
+    // Everyone except SuperAdmin is locked to their specific company
     query.company = userCompany;
 
-    // Staff (not owners) only see projects where they are in the assignedUsers array
+    // Staff (not owners) see only projects where they are explicitly assigned
     if (!isOwner) {
       query.assignedUsers = req.user._id;
     }
@@ -40,6 +40,7 @@ const getProjects = asyncHandler(async (req, res) => {
 const getProjectById = asyncHandler(async (req, res) => {
   const { id } = req.params;
 
+  // Bulletproof ID validation
   if (!id || id === 'null' || id === 'undefined') {
     return res.status(400).json({ message: 'Invalid Project ID' });
   }
@@ -51,7 +52,7 @@ const getProjectById = asyncHandler(async (req, res) => {
     throw new Error('Project not found');
   }
 
-  // ⭐ Security Check: Ensure user belongs to the same company as the project
+  // ⭐ Security Guard: Ensure project belongs to the user's organization
   const isSuperAdmin = req.user.permissions?.includes('*');
   if (!isSuperAdmin && project.company?.toString() !== req.user.company?.toString()) {
     res.status(403);
@@ -74,12 +75,12 @@ const createProject = asyncHandler(async (req, res) => {
     throw new Error('Please add a project title');
   }
 
-  // ⭐ Auto-assign the user's company and the creator ID
+  // ⭐ Multi-tenant Anchor: Auto-assign user's company and track project creator
   const project = await Project.create({
     title,
     description,
     assignedUsers: assignedUsers || [],
-    company: req.user.company, // Lock to creator's company
+    company: req.user.company, // Links project to the requester's company
     createdBy: req.user._id,
   });
 
@@ -103,14 +104,15 @@ const updateProject = asyncHandler(async (req, res) => {
     throw new Error('Project not found');
   }
 
-  // ⭐ Permission Check: Only Owner or Creator from the same company can update
+  // ⭐ Permission Logic: Owner or Creator within the same company
   const isOwner = req.user.isCompanyOwner;
   const isCreator = project.createdBy?.toString() === req.user._id.toString();
   const isSameCompany = project.company?.toString() === req.user.company?.toString();
+  const isSuperAdmin = req.user.permissions?.includes('*');
 
-  if (!isSameCompany || (!isOwner && !isCreator)) {
+  if (!isSuperAdmin && (!isSameCompany || (!isOwner && !isCreator))) {
     res.status(403);
-    throw new Error('Only the Company Owner or project creator can update this project');
+    throw new Error('Only the Company Owner or project creator can update projects within their organization');
   }
 
   const updatedProject = await Project.findByIdAndUpdate(
@@ -137,14 +139,14 @@ const deleteProject = asyncHandler(async (req, res) => {
     throw new Error('Project not found');
   }
 
-  // ⭐ Permission Check: Strictly Company Owner from the same company
+  // ⭐ Strict Security: Only Company Owner (or SuperAdmin) can delete organization data
   const isOwner = req.user.isCompanyOwner;
   const isSameCompany = project.company?.toString() === req.user.company?.toString();
   const isSuperAdmin = req.user.permissions?.includes('*');
 
   if (!isSuperAdmin && (!isSameCompany || !isOwner)) {
     res.status(403);
-    throw new Error('Deletion is restricted to the Company Owner only');
+    throw new Error('Deletion is strictly restricted to the Company Owner');
   }
 
   await project.deleteOne();
@@ -160,7 +162,7 @@ const getProjectTeam = asyncHandler(async (req, res) => {
   const { id } = req.params;
 
   if (!id || id === 'null' || id === 'undefined') {
-    return res.status(400).json({ message: 'Invalid Project ID' });
+    return res.status(400).json({ message: 'Invalid or missing Project ID' });
   }
 
   const project = await Project.findById(id).populate('assignedUsers', 'name email role');
@@ -169,9 +171,10 @@ const getProjectTeam = asyncHandler(async (req, res) => {
     return res.status(404).json({ message: 'Project not found' });
   }
 
-  // ⭐ Security Check
-  if (project.company?.toString() !== req.user.company?.toString() && !req.user.permissions?.includes('*')) {
-    return res.status(403).json({ message: 'Unauthorized access to this team' });
+  // ⭐ Security Check: Verify company alignment
+  const isSuperAdmin = req.user.permissions?.includes('*');
+  if (!isSuperAdmin && project.company?.toString() !== req.user.company?.toString()) {
+    return res.status(403).json({ message: 'Unauthorized access to this team data' });
   }
 
   res.status(200).json(project.assignedUsers);

@@ -5,6 +5,7 @@ import Project from '../models/Project.js';
 import TaskStatus from '../models/TaskStatus.js';
 import sendTaskEmail from '../utils/sendAssignEmail.js';
 
+// @desc    Get all tasks (Scoped to Company)
 export const getTasks = async (req, res) => {
   try {
     const { project, itemType, page = 1, limit = 10 } = req.query;
@@ -18,17 +19,24 @@ export const getTasks = async (req, res) => {
     const limitNumber = parseInt(limit);
     const skip = (pageNumber - 1) * limitNumber;
 
-    let query = { project };
+    // ⭐ SCOPE: Ensure tasks belong to the project AND the user's company
+    let query = { 
+      project, 
+      company: req.user.company 
+    };
 
     // Case-insensitive filtering for Task vs Issue
     if (itemType) {
       query.itemType = { $regex: new RegExp(`^${itemType}$`, 'i') };
     }
 
-    // Role-based filtering
+    // Role-based filtering within the company
     if (req.user) {
       const roleName = typeof req.user.role === 'object' ? req.user.role?.name : req.user.role;
-      if (roleName !== 'admin' && roleName !== 'superadmin') {
+      const isOwner = req.user.isCompanyOwner; // Check for company owner status
+      
+      // Admins, Superadmins, and Company Owners see all tasks within their company
+      if (roleName !== 'admin' && roleName !== 'superadmin' && !isOwner) {
         query.$or = [{ assignedTo: req.user._id }, { mentionedUsers: req.user._id }];
       }
     }
@@ -39,10 +47,10 @@ export const getTasks = async (req, res) => {
         .populate('assignedTo', 'name email')
         .populate({ path: 'status', model: 'TaskStatus', select: 'name color' })
         .sort({ createdAt: -1 })
-        .skip(skip)   // Skip previous pages
-        .limit(limitNumber) // Only fetch current page
+        .skip(skip)
+        .limit(limitNumber)
         .lean(),
-      Task.countDocuments(query) // Total for frontend pagination controls
+      Task.countDocuments(query)
     ]);
 
     res.json({
@@ -60,10 +68,14 @@ export const getTasks = async (req, res) => {
 // @desc    Get single task by ID
 export const getTaskById = async (req, res) => {
   try {
-    const task = await Task.findById(req.params.id)
+    // ⭐ SCOPE: Ensure task belongs to the user's company
+    const task = await Task.findOne({ 
+      _id: req.params.id, 
+      company: req.user.company 
+    })
       .populate('assignedTo', 'name email')
       .populate({ path: 'status', model: 'TaskStatus' })
-      .lean(); // Add lean() here as well for efficiency
+      .lean();
 
     if (!task) return res.status(404).json({ message: 'Task not found' });
     res.json(task);
@@ -78,8 +90,10 @@ export const createTask = async (req, res) => {
     const { title, description, status, assignedTo, project, itemType } = req.body;
     const taskType = itemType || 'Task';
 
+    // ⭐ SCOPE Check: Verify title uniqueness within the same project and company
     const existing = await Task.findOne({
       project,
+      company: req.user.company,
       title: { $regex: new RegExp(`^${title.trim()}$`, 'i') }
     }).lean();
 
@@ -90,11 +104,18 @@ export const createTask = async (req, res) => {
     const imagePaths = req.files?.images ? req.files.images.map(f => f.path) : [];
     const videoPaths = req.files?.videos ? req.files.videos.map(f => f.path) : [];
 
+    // ⭐ SCOPE: Auto-assign user's company and creator ID
     const task = await Task.create({
-      title: title.trim(), description, status, project,
+      title: title.trim(), 
+      description, 
+      status, 
+      project,
+      company: req.user.company, // Lock to company
       assignedTo: assignedTo || null,
-      images: imagePaths, videos: videoPaths,
-      itemType: taskType
+      images: imagePaths, 
+      videos: videoPaths,
+      itemType: taskType,
+      createdBy: req.user._id // Tracking creator
     });
 
     if (assignedTo) {
@@ -112,14 +133,13 @@ export const createTask = async (req, res) => {
   }
 };
 
-/**
- * @desc    Bulk Create - Turbo-charged for 10k rows in < 3s
- */
+// @desc    Bulk Create Tasks
 export const bulkCreateTasks = async (req, res) => {
   try {
     const { items, project, type } = req.body;
     const projectObjectId = new mongoose.Types.ObjectId(project);
     const category = type?.toLowerCase() === 'issue' ? 'Issue' : 'Task';
+    const userCompany = req.user.company; // ⭐ Multi-tenant context
 
     // 1. Get unique identifiers from Excel
     const identifiers = [...new Set(items.map(item => {
@@ -127,12 +147,13 @@ export const bulkCreateTasks = async (req, res) => {
       return raw.toString().toLowerCase().trim();
     }).filter(Boolean))];
 
-    // 2. Fetch data
+    // 2. Fetch scoped data
     const [existingTasks, defaultStatus, users, projectDoc] = await Promise.all([
-      Task.find({ project: projectObjectId }).select('title').lean(),
+      Task.find({ project: projectObjectId, company: userCompany }).select('title').lean(),
       TaskStatus.findOne({ project: projectObjectId }).lean(),
-      // ⭐ We look for email OR name if the excel only has names
+      // ⭐ SCOPE: Only find users belonging to the same company
       User.find({ 
+        company: userCompany,
         $or: [
           { email: { $in: identifiers } },
           { name: { $in: identifiers } } 
@@ -142,8 +163,6 @@ export const bulkCreateTasks = async (req, res) => {
     ]);
 
     const memberSet = new Set((projectDoc?.members || []).map(m => m.toString()));
-    
-    // Map by both Email and Name for maximum compatibility
     const userLookupMap = new Map();
     users.forEach(u => {
       if (u.email) userLookupMap.set(u.email.toLowerCase(), u._id);
@@ -168,7 +187,6 @@ export const bulkCreateTasks = async (req, res) => {
         assigneeId = dbUser;
         assignedCount++;
         
-        // ⭐ Automatically add user to project if missing
         if (!memberSet.has(dbUser.toString())) {
           await Project.findByIdAndUpdate(projectObjectId, { $addToSet: { members: dbUser } });
           memberSet.add(dbUser.toString());
@@ -179,9 +197,11 @@ export const bulkCreateTasks = async (req, res) => {
         title,
         description: item.description || "",
         project: projectObjectId,
+        company: userCompany, // ⭐ Bulk assign company
         status: defaultStatus?._id || null,
         assignedTo: assigneeId,
         itemType: category,
+        createdBy: req.user._id,
         createdAt: new Date(),
         updatedAt: new Date()
       });
@@ -202,18 +222,26 @@ export const bulkCreateTasks = async (req, res) => {
     res.status(500).json({ message: "Server Error" });
   }
 };
+
 // @desc    Update Task or Issue
 export const updateTask = async (req, res) => {
   try {
     const { title, description, status, assignedTo, itemType } = req.body;
-    const oldTask = await Task.findById(req.params.id);
-    if (!oldTask) return res.status(404).json({ message: 'Task not found' });
+    
+    // ⭐ SCOPE: Verify task exists and belongs to user's company
+    const oldTask = await Task.findOne({ 
+      _id: req.params.id, 
+      company: req.user.company 
+    });
+    
+    if (!oldTask) return res.status(404).json({ message: 'Task not found or access denied' });
 
     const taskType = itemType || oldTask.itemType;
 
     if (title && title.trim().toLowerCase() !== oldTask.title.toLowerCase()) {
       const duplicate = await Task.findOne({
         project: oldTask.project,
+        company: req.user.company,
         title: { $regex: new RegExp(`^${title.trim()}$`, 'i') },
         _id: { $ne: req.params.id }
       }).lean();
@@ -244,7 +272,14 @@ export const updateTask = async (req, res) => {
 // @desc    Delete Task
 export const deleteTask = async (req, res) => {
   try {
-    await Task.findByIdAndDelete(req.params.id);
+    // ⭐ SCOPE: Ensure task belongs to company before deleting
+    const task = await Task.findOneAndDelete({ 
+      _id: req.params.id, 
+      company: req.user.company 
+    });
+
+    if (!task) return res.status(404).json({ message: 'Task not found or access denied' });
+
     const io = req.app.get('io');
     if (io) io.emit('taskDeleted', req.params.id);
     res.json({ message: 'Removed' });

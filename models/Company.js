@@ -1,22 +1,52 @@
 const mongoose = require('mongoose');
 
 const companySchema = new mongoose.Schema({
-  companyName: { type: String, required: true },
-  ownerName: { type: String, required: true },
+  companyName: { 
+    type: String, 
+    required: true 
+  },
+  logoUrl: {
+    type: String,
+    default: ''
+  },
+  ownerName: { 
+    type: String, 
+    required: true 
+  },
   ownerId: { 
     type: mongoose.Schema.Types.ObjectId, 
-    ref: 'User', 
-    required: true 
-  }, // Links the company to the user who created it
-  streetAddress: { type: String, required: true },
-  city: { type: String, required: true },
-  state: { type: String, required: true },
-  zipCode: { type: String, required: true },
-  country: { type: String, required: true },
-  companyEmail: { type: String, required: true },
-  phoneNumber: { type: String, required: true },
-  nominalCapital: { type: String },
-  industry: { type: String, required: true }
+    ref: 'User' 
+  },
+  // ⭐ Unified Address Field
+  fullAddress: { 
+    type: String 
+  },
+  companyEmail: { 
+    type: String, 
+    required: true, 
+    unique: true 
+  },
+  phoneNumber: { 
+    type: String 
+  },
+
+// ⭐ NEW: Company Settings Fields
+  workingDays: {
+    type: [String],
+    default: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
+  },
+  workingHours: {
+    start: { type: String, default: '09:00' },
+    end: { type: String, default: '17:00' }
+  },
+  breakTimings: {
+    start: { type: String, default: '13:00' },
+    end: { type: String, default: '14:00' }
+  },
+  holidays: [{
+    name: String,
+    date: String // Stored as YYYY-MM-DD for easy HTML5 date input handling
+  }],
 }, { timestamps: true });
 
 module.exports = mongoose.model('Company', companySchema);

@@ -52,6 +52,10 @@ router.post('/text-doc', protect, documentController.saveTextDocument);
 
 
 // --- 3. ID-Specific Routes (Dynamic IDs Last) ---
+
+// ⭐ PDF Generation Route (Must be placed BEFORE generic /:id routes)
+router.get('/:id/pdf', protect, documentController.generateDocumentPDF);
+
 // Fetches document content (Review on open logic)
 router.get('/:id', protect, documentController.getDocumentById);
 

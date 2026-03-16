@@ -32,17 +32,23 @@ const userSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Role', 
     },
-  
+    // ⭐ Permissions stored directly on user for fast checking
+    permissions: {
+      type: [String],
+      default: []
+    },
     preferences: {
       autoSaveEnabled: { type: Boolean, default: false } 
     },
+    // ⭐ Multi-Tenancy: Links the user to their specific company
     company: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'Company', // Links the user back to their company
+      ref: 'Company',
+      required: true
     },
     isCompanyOwner: {
       type: Boolean,
-      default: false, // Will be set to true for users who register via the company form
+      default: false,
     },
     resetPasswordToken: String,
     resetPasswordExpire: Date,
@@ -52,6 +58,7 @@ const userSchema = new mongoose.Schema(
   }
 );
 
+// Hashing password before saving
 userSchema.pre('save', async function (next) {
   if (!this.isModified('password')) {
     return next();
@@ -61,18 +68,23 @@ userSchema.pre('save', async function (next) {
   next();
 });
 
+// Match user entered password to hashed password in database
 userSchema.methods.matchPassword = async function (enteredPassword) {
   return await bcrypt.compare(enteredPassword, this.password);
 };
 
+// Generate and hash password token
 userSchema.methods.getResetPasswordToken = function () {
   const resetToken = crypto.randomBytes(20).toString('hex');
   this.resetPasswordToken = crypto
     .createHash('sha256')
     .update(resetToken)
     .digest('hex');
-  this.resetPasswordExpire = Date.now() + 15 * 60 * 1000;
+  this.resetPasswordExpire = Date.now() + 10 * 60 * 1000;
   return resetToken;
 };
+
+// Indexing company for faster lookups
+userSchema.index({ company: 1 });
 
 module.exports = mongoose.model('User', userSchema);
