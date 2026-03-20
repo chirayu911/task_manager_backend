@@ -1,12 +1,13 @@
 const Document = require('../models/Document');
 const User = require('../models/User');
-const DocumentPage = require('../models/DocumentPage'); // Added for .doc pages
-const Company = require('../models/Company');           // Added for PDF headers
-const PDFDocument = require('pdfkit');                  // Added for PDF generation
+const DocumentPage = require('../models/DocumentPage');
+const Company = require('../models/Company');
+const PDFDocument = require('pdfkit');
 const fs = require('fs');
 const path = require('path');
 const requestMail = require('../utils/requestMail');
 const { buildCompanyPDF } = require('../utils/pdfGenerator');
+const logActivity = require('../utils/logActivity'); // ⭐ Imported the activity logger
 
 // Helper to notify users (restored original notification logic)
 async function notifySharedUsers(doc, ownerName) {
@@ -52,11 +53,32 @@ exports.createDocument = async (req, res) => {
 
     const uploaderId = req.user?._id || req.user?.id;
     if (!uploaderId) return res.status(401).json({ message: "User authentication required." });
+    
+    const userCompanyId = req.user?.company;
+
+    // ⭐ SUBSCRIPTION LIMIT CHECK
+    if (userCompanyId) {
+      const company = await Company.findById(userCompanyId).populate('subscriptionPlan');
+      if (company) {
+        const maxDocuments = company.subscriptionPlan ? company.subscriptionPlan.maxDocuments : 10;
+        if (maxDocuments !== -1) {
+          const currentDocCount = await Document.countDocuments({ company: userCompanyId });
+          if (currentDocCount >= maxDocuments) {
+            return res.status(403).json({
+              message: company.subscriptionPlan 
+                ? `Subscription Limit Exceeded: Your plan allows a maximum of ${maxDocuments} documents. Please upgrade your plan.` 
+                : `Subscription Limit Exceeded: You do not have an active plan. Default limit is 10 documents. Please subscribe.`
+            });
+          }
+        }
+      }
+    }
 
     const docData = {
       title: title || 'Untitled',
       description,
       project,
+      company: userCompanyId,
       accessType: accessType || 'public',
       readOnlyUsers,
       canEditUsers,
@@ -75,6 +97,17 @@ exports.createDocument = async (req, res) => {
 
     const newDoc = new Document(docData);
     await newDoc.save();
+
+    // ⭐ ACTIVITY LOG: Document Upload/Creation
+    await logActivity({
+      user: req.user._id,
+      company: userCompanyId,
+      project: project,
+      action: req.file ? 'uploaded' : 'created',
+      resourceType: 'document',
+      resourceId: newDoc._id,
+      description: `${req.file ? 'Uploaded' : 'Created'} document: "${newDoc.title}"`
+    });
 
     if (readOnlyUsers.length > 0 || canEditUsers.length > 0) {
       await notifySharedUsers(newDoc, req.user.name);
@@ -227,43 +260,42 @@ exports.declineAccess = async (req, res) => {
 };
 
 // ==========================================
-// 7. Standard CRUD
-// ==========================================
-// ==========================================
 // 7. Standard CRUD (Updated to include DocumentPages)
 // ==========================================
 exports.getDocumentById = async (req, res) => {
   try {
-    // 1. Fetch the main Document
+    // 1. Find the main document
     const doc = await Document.findById(req.params.id)
       .populate('uploadedBy', 'name email')
       .populate('readOnlyUsers', 'name email')
-      .populate('canEditUsers', 'name email');
+      .populate('canEditUsers', 'name email')
+      .lean(); // Using .lean() is better than .toObject() for performance
       
     if (!doc) return res.status(404).json({ message: "Document not found." });
 
-    // 2. Convert Mongoose document to a plain JavaScript object
-    // This allows us to inject new properties (like 'pages') that aren't strictly in the schema
-    const docResponse = doc.toObject();
+    // 2. Fetch the pages from the DocumentPage collection
+    // Ensure the field name 'documentId' matches your DocumentPage schema exactly
+    const pages = await DocumentPage.find({ documentId: doc._id })
+      .sort({ pageNo: 1 })
+      .lean();
 
-    // 3. Fetch all associated pages from the DocumentPage dataset
-    const pages = await DocumentPage.find({ documentId: doc._id }).sort({ pageNo: 1 });
+    // 3. Attach the pages to the response
+    doc.pages = pages || [];
 
-    // 4. Attach the pages to the document object
-    docResponse.pages = pages;
-
-    // 5. Keep the frontend happy: If there are pages, combine their content 
-    // into the main 'content' field so the TextEditor loads it immediately.
+    // 4. Reconstruction for the Editor
+    // Most editors expect a single 'content' string. 
+    // We join the pages but keep them separate in the 'pages' array for structure.
     if (pages && pages.length > 0) {
-      docResponse.content = pages.map(p => p.content).join('\n');
+      doc.content = pages.map(p => p.content).join(''); // Use empty string or '\n' based on your editor
+    } else {
+      // Fallback if no pages exist yet
+      doc.content = doc.content || ""; 
     }
 
-    // 6. Send the merged object back to the frontend
-    res.status(200).json(docResponse);
-
+    res.status(200).json(doc);
   } catch (error) {
     console.error("🔴 GET DOC BY ID ERROR:", error);
-    res.status(500).json({ message: "Error fetching document." });
+    res.status(500).json({ message: "Error fetching document pages." });
   }
 };
 
@@ -272,13 +304,22 @@ exports.deleteDocument = async (req, res) => {
     const deletedDoc = await Document.findByIdAndDelete(req.params.id);
     if (!deletedDoc) return res.status(404).json({ message: "Document not found." });
     
-    // ⭐ Cleanup: Delete physical file if it exists
+    // ⭐ ACTIVITY LOG: Document Deletion
+    await logActivity({
+      user: req.user._id,
+      company: req.user.company,
+      project: deletedDoc.project,
+      action: 'deleted',
+      resourceType: 'document',
+      resourceId: deletedDoc._id,
+      description: `Deleted document: "${deletedDoc.title}"`
+    });
+
     if (deletedDoc.fileUrl) {
       const filePath = path.join(__dirname, '..', deletedDoc.fileUrl);
       if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
     }
     
-    // ⭐ Cleanup: Delete associated Document Pages for .doc files
     await DocumentPage.deleteMany({ documentId: deletedDoc._id });
     
     res.status(200).json({ message: "Document deleted." });
@@ -292,7 +333,6 @@ exports.deleteDocument = async (req, res) => {
 // ==========================================
 exports.saveTextDocument = async (req, res) => {
   try {
-    // ⭐ Added fileExtension parameter to determine if it's .txt or .doc
     const { title, project, accessType, content, allowedUsers: usersInput, documentId, fileExtension } = req.body;
     if (!req.user?._id) return res.status(401).json({ message: "Auth required" });
 
@@ -304,10 +344,9 @@ exports.saveTextDocument = async (req, res) => {
     const readOnlyUsers = allowedUsers.filter(u => !u.canEdit).map(u => u.userId);
     const canEditUsers = allowedUsers.filter(u => u.canEdit).map(u => u.userId);
 
-    // Determine target file type
     const targetFileType = fileExtension?.toUpperCase() === 'DOC' ? 'DOC' : 'TXT';
+    const userCompanyId = req.user?.company;
 
-    // ⭐ CASE 1: Updating an existing document
     if (documentId) {
       const doc = await Document.findById(documentId);
       if (doc) {
@@ -316,20 +355,30 @@ exports.saveTextDocument = async (req, res) => {
         }
 
         doc.title = title || doc.title;
-        doc.content = content; // Fallback content storage
+        doc.content = content;
         doc.readOnlyUsers = readOnlyUsers;
         doc.canEditUsers = canEditUsers;
         doc.lastSavedAt = Date.now();
-        doc.fileType = targetFileType; // Update type based on frontend choice
+        doc.fileType = targetFileType;
 
         await doc.save();
 
-        // If it's a .doc, update or create the associated page for PDF generation
+        // ⭐ ACTIVITY LOG: Document Update (Autosave/Manual)
+        await logActivity({
+          user: req.user._id,
+          company: userCompanyId,
+          project: doc.project,
+          action: 'updated',
+          resourceType: 'document',
+          resourceId: doc._id,
+          description: `Updated content for: "${doc.title}"`
+        });
+
         if (targetFileType === 'DOC') {
           await DocumentPage.findOneAndUpdate(
             { documentId: doc._id, pageNo: 1 },
             { content: content },
-            { upsert: true, new: true } // Creates it if it doesn't exist yet
+            { upsert: true, new: true }
           );
         }
 
@@ -337,22 +386,50 @@ exports.saveTextDocument = async (req, res) => {
       }
     }
 
-    // ⭐ CASE 2: Creating a NEW document
+    // SUBSCRIPTION LIMIT CHECK (FOR NEW DOCS)
+    if (userCompanyId) {
+      const company = await Company.findById(userCompanyId).populate('subscriptionPlan');
+      if (company) {
+        const maxDocuments = company.subscriptionPlan ? company.subscriptionPlan.maxDocuments : 10;
+        if (maxDocuments !== -1) {
+          const currentDocCount = await Document.countDocuments({ company: userCompanyId });
+          if (currentDocCount >= maxDocuments) {
+            return res.status(403).json({
+              message: company.subscriptionPlan 
+                ? `Subscription Limit Exceeded: Your plan allows a maximum of ${maxDocuments} documents. Please upgrade your plan.` 
+                : `Subscription Limit Exceeded: You do not have an active plan. Default limit is 10 documents. Please subscribe.`
+            });
+          }
+        }
+      }
+    }
+
     const newDoc = new Document({
       title: title || 'Untitled',
       project,
+      company: userCompanyId,
       accessType: accessType || 'restricted',
       type: 'text',
       content: content || '',
       readOnlyUsers,
       canEditUsers,
       uploadedBy: req.user._id,
-      fileType: targetFileType // Sets as TXT or DOC
+      fileType: targetFileType
     });
 
     await newDoc.save();
 
-    // If saving as .doc, create the initial page layout
+    // ⭐ ACTIVITY LOG: Text Document Creation
+    await logActivity({
+      user: req.user._id,
+      company: userCompanyId,
+      project: project,
+      action: 'created',
+      resourceType: 'document',
+      resourceId: newDoc._id,
+      description: `Created text document: "${newDoc.title}"`
+    });
+
     if (targetFileType === 'DOC') {
       await DocumentPage.create({
         documentId: newDoc._id,
@@ -417,6 +494,17 @@ exports.updateDocument = async (req, res) => {
       { new: true }
     ).populate('uploadedBy', 'name email').populate('readOnlyUsers', 'name email').populate('canEditUsers', 'name email');
 
+    // ⭐ ACTIVITY LOG: File/Settings Update
+    await logActivity({
+      user: req.user._id,
+      company: req.user.company,
+      project: updatedDoc.project,
+      action: 'updated',
+      resourceType: 'document',
+      resourceId: updatedDoc._id,
+      description: `Updated document settings/file for: "${updatedDoc.title}"`
+    });
+
     res.status(200).json(updatedDoc);
   } catch (error) {
     console.error("🔴 UPDATE DOC ERROR:", error);
@@ -429,14 +517,12 @@ exports.updateDocument = async (req, res) => {
 // ==========================================
 exports.generateDocumentPDF = async (req, res) => {
   try {
-    // 1. Fetch Document
     const docData = await Document.findById(req.params.id).populate('uploadedBy');
     
     if (!docData || docData.fileType !== 'DOC') {
       return res.status(400).json({ message: 'PDF generation only supported for .doc files' });
     }
 
-    // 2. Fetch Company Data (with fallbacks)
     let companyData = {
       companyName: "Organization Document",
       companyEmail: "",
@@ -450,13 +536,11 @@ exports.generateDocumentPDF = async (req, res) => {
       }
     }
 
-    // 3. Fetch Document Pages
     const pages = await DocumentPage.find({ documentId: docData._id }).sort({ pageNo: 1 });
     if (!pages || pages.length === 0) {
       return res.status(404).json({ message: "No content pages found for this document." });
     }
 
-    // ⭐ 4. Delegate the rendering to our new utility file!
     buildCompanyPDF(res, docData, companyData, pages);
 
   } catch (error) {

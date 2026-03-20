@@ -1,5 +1,6 @@
 const asyncHandler = require('express-async-handler');
 const User = require('../models/User');
+const Company = require('../models/Company'); // ⭐ CRITICAL: Import this to register the schema
 const Role = require('../models/Role');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
@@ -332,6 +333,49 @@ const resetPassword = asyncHandler(async (req, res) => {
   res.status(200).json({ message: 'Password reset successful. You can now log in.' });
 });
 
+// @desc    Get all staff/users (Scoped to Active Company)
+// @route   GET /api/user
+const getAllStaff = asyncHandler(async (req, res) => {
+  // ⭐ SAFETY CHECK 1: Ensure req.user exists (Auth Middleware check)
+  if (!req.user) {
+    res.status(401);
+    throw new Error('Not authorized, user missing');
+  }
+
+  try {
+    const activeCompanyId = req.headers['x-active-company-id'];
+    
+    // ⭐ SAFETY CHECK 2: Handle potential undefined role safely
+    const userRole = req.user.role;
+    const roleName = typeof userRole === 'object' ? userRole?.name : userRole;
+    
+    // Check if system admin or superadmin
+    const isSystemAdmin = roleName === 'admin' || roleName === 'superadmin' || req.user.permissions?.includes('*');
+
+    let query = {};
+
+    // Filtering logic
+    if (isSystemAdmin && activeCompanyId) {
+      // If Admin and specific company selected, show that company's staff
+      query.company = activeCompanyId;
+    } else {
+      // Regular owners/staff only see their own company
+      query.company = req.user.company;
+    }
+
+    const users = await User.find(query)
+      .select('-password') 
+      .populate({ path: 'company', select: 'companyName' || all })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    res.status(200).json(users || []);
+  } catch (error) {
+    console.error("BACKEND ERROR:", error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+
 module.exports = { 
   loginUser, 
   logoutUser, 
@@ -342,5 +386,6 @@ module.exports = {
   updateUser, 
   deleteUser,
   forgotPassword, 
-  resetPassword   
+  resetPassword,
+  getAllStaff   
 };

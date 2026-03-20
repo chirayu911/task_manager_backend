@@ -9,6 +9,7 @@ const {
   getUserById, // <--- This was missing before
   updateUser,
   deleteUser,
+  getAllStaff
 } = require('../controllers/userController');
 
 const { protect } = require('../middleware/authMiddleware');
@@ -19,6 +20,7 @@ router.post('/logout', logoutUser);
 
 // Protected Routes
 router.get('/me', protect, getMe);
+router.get('/', protect, getAllStaff);
 
 // Admin Routes for User Management
 router.route('/')

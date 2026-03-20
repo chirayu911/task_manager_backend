@@ -10,12 +10,17 @@ const path = require('path');
 const session = require('express-session');
 const subscriptionRoutes = require('./routes/subscriptionRoutes');
 const companyRoutes = require('./routes/companyRoutes');
+const activityRoutes = require('./routes/activityRoutes');
 
 dotenv.config();
 connectDB();
 
 const app = express();
 const server = http.createServer(app);
+
+// ⭐ FIX FOR 304 NOT MODIFIED: Disable ETags to prevent aggressive API caching
+app.disable('etag');
+
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 const documentRoutes = require('./routes/documentRoutes');
 
@@ -86,6 +91,7 @@ app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/documents', documentRoutes);
 app.use('/api/company', companyRoutes);
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use('/api/activities', activityRoutes);
 
 
 const PORT = process.env.PORT || 5000;

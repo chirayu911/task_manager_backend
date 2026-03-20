@@ -1,5 +1,7 @@
 const asyncHandler = require('express-async-handler');
 const Project = require('../models/Project');
+const Company = require('../models/Company');
+const logActivity = require('../utils/logActivity'); // ⭐ Imported the activity logger
 
 /**
  * @desc    Get all projects (Scoped to Company)
@@ -7,19 +9,14 @@ const Project = require('../models/Project');
  * @access  Private
  */
 const getProjects = asyncHandler(async (req, res) => {
-  // 1. Determine User Context
   const isSuperAdmin = req.user.permissions?.includes('*');
   const isOwner = req.user.isCompanyOwner;
   const userCompany = req.user.company;
 
   let query = {};
 
-  // 2. Filter Logic: Mandatory Company Isolation
   if (!isSuperAdmin) {
-    // Everyone except SuperAdmin is locked to their specific company
     query.company = userCompany;
-
-    // Staff (not owners) see only projects where they are explicitly assigned
     if (!isOwner) {
       query.assignedUsers = req.user._id;
     }
@@ -40,7 +37,6 @@ const getProjects = asyncHandler(async (req, res) => {
 const getProjectById = asyncHandler(async (req, res) => {
   const { id } = req.params;
 
-  // Bulletproof ID validation
   if (!id || id === 'null' || id === 'undefined') {
     return res.status(400).json({ message: 'Invalid Project ID' });
   }
@@ -52,7 +48,6 @@ const getProjectById = asyncHandler(async (req, res) => {
     throw new Error('Project not found');
   }
 
-  // ⭐ Security Guard: Ensure project belongs to the user's organization
   const isSuperAdmin = req.user.permissions?.includes('*');
   if (!isSuperAdmin && project.company?.toString() !== req.user.company?.toString()) {
     res.status(403);
@@ -75,17 +70,47 @@ const createProject = asyncHandler(async (req, res) => {
     throw new Error('Please add a project title');
   }
 
-  // ⭐ Multi-tenant Anchor: Auto-assign user's company and track project creator
+  const userCompanyId = req.user.company;
+  const company = await Company.findById(userCompanyId).populate('subscriptionPlan');
+
+  if (company) {
+    const plan = company.subscriptionPlan;
+    const maxProjects = plan ? plan.maxProjects : 1;
+    if (maxProjects !== -1) {
+      const currentProjectCount = await Project.countDocuments({ company: userCompanyId });
+      if (currentProjectCount >= maxProjects) {
+        res.status(403);
+        throw new Error(`Project limit reached (${maxProjects}). Please upgrade your plan.`);
+      }
+    }
+
+    const maxTeam = plan ? plan.maxTeamMembersPerProject : 5;
+    if (maxTeam !== -1 && assignedUsers && assignedUsers.length > maxTeam) {
+      res.status(403);
+      throw new Error(`Team size limit exceeded. Your plan allows only ${maxTeam} members per project.`);
+    }
+  }
+
   const project = await Project.create({
     title,
     description,
     assignedUsers: assignedUsers || [],
-    company: req.user.company, // Links project to the requester's company
+    company: userCompanyId,
     createdBy: req.user._id,
   });
 
-  const populatedProject = await Project.findById(project._id).populate('assignedUsers', 'name email role');
+  // ⭐ ACTIVITY LOG: Project Creation
+  await logActivity({
+    user: req.user._id,
+    company: userCompanyId,
+    project: project._id,
+    action: 'created',
+    resourceType: 'project',
+    resourceId: project._id,
+    description: `Created new project: "${title}"`
+  });
 
+  const populatedProject = await Project.findById(project._id).populate('assignedUsers', 'name email role');
   res.status(201).json(populatedProject);
 });
 
@@ -96,6 +121,7 @@ const createProject = asyncHandler(async (req, res) => {
  */
 const updateProject = asyncHandler(async (req, res) => {
   const { id } = req.params;
+  const { title, assignedUsers } = req.body;
 
   const project = await Project.findById(id);
 
@@ -104,7 +130,6 @@ const updateProject = asyncHandler(async (req, res) => {
     throw new Error('Project not found');
   }
 
-  // ⭐ Permission Logic: Owner or Creator within the same company
   const isOwner = req.user.isCompanyOwner;
   const isCreator = project.createdBy?.toString() === req.user._id.toString();
   const isSameCompany = project.company?.toString() === req.user.company?.toString();
@@ -115,11 +140,46 @@ const updateProject = asyncHandler(async (req, res) => {
     throw new Error('Only the Company Owner or project creator can update projects within their organization');
   }
 
+  if (assignedUsers) {
+    const company = await Company.findById(req.user.company).populate('subscriptionPlan');
+    if (company && company.subscriptionPlan) {
+      const maxTeam = company.subscriptionPlan.maxTeamMembersPerProject;
+      if (maxTeam !== -1 && assignedUsers.length > maxTeam) {
+        res.status(403);
+        throw new Error(`Cannot update team. Your plan limit is ${maxTeam} members per project.`);
+      }
+    }
+  }
+
   const updatedProject = await Project.findByIdAndUpdate(
     id,
     req.body,
     { new: true, runValidators: true }
   ).populate('assignedUsers', 'name email role');
+
+  // ⭐ ACTIVITY LOG: General Update
+  await logActivity({
+    user: req.user._id,
+    company: req.user.company,
+    project: id,
+    action: 'updated',
+    resourceType: 'project',
+    resourceId: id,
+    description: `Updated project details for "${updatedProject.title}"`
+  });
+
+  // ⭐ ACTIVITY LOG: Team Member Change Check
+  if (assignedUsers && JSON.stringify(assignedUsers) !== JSON.stringify(project.assignedUsers)) {
+    await logActivity({
+      user: req.user._id,
+      company: req.user.company,
+      project: id,
+      action: 'updated',
+      resourceType: 'project',
+      resourceId: id,
+      description: `Modified team membership for "${updatedProject.title}"`
+    });
+  }
 
   res.status(200).json(updatedProject);
 });
@@ -131,7 +191,6 @@ const updateProject = asyncHandler(async (req, res) => {
  */
 const deleteProject = asyncHandler(async (req, res) => {
   const { id } = req.params;
-
   const project = await Project.findById(id);
 
   if (!project) {
@@ -139,7 +198,6 @@ const deleteProject = asyncHandler(async (req, res) => {
     throw new Error('Project not found');
   }
 
-  // ⭐ Strict Security: Only Company Owner (or SuperAdmin) can delete organization data
   const isOwner = req.user.isCompanyOwner;
   const isSameCompany = project.company?.toString() === req.user.company?.toString();
   const isSuperAdmin = req.user.permissions?.includes('*');
@@ -149,8 +207,18 @@ const deleteProject = asyncHandler(async (req, res) => {
     throw new Error('Deletion is strictly restricted to the Company Owner');
   }
 
+  // ⭐ ACTIVITY LOG: Before Deletion
+  await logActivity({
+    user: req.user._id,
+    company: req.user.company,
+    project: id,
+    action: 'deleted',
+    resourceType: 'project',
+    resourceId: id,
+    description: `Deleted project: "${project.title}"`
+  });
+
   await project.deleteOne();
-  
   res.status(200).json({ id, message: 'Project deleted successfully' });
 });
 
@@ -171,7 +239,6 @@ const getProjectTeam = asyncHandler(async (req, res) => {
     return res.status(404).json({ message: 'Project not found' });
   }
 
-  // ⭐ Security Check: Verify company alignment
   const isSuperAdmin = req.user.permissions?.includes('*');
   if (!isSuperAdmin && project.company?.toString() !== req.user.company?.toString()) {
     return res.status(403).json({ message: 'Unauthorized access to this team data' });

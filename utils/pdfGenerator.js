@@ -103,17 +103,7 @@ exports.buildCompanyPDF = (res, docData, companyData, pages) => {
       // Title
       let startY = 110; 
 
-      if (isFirstPage) {
-        pdf.font('Helvetica-Bold')
-           .fontSize(24)
-           .fillColor('#0f172a')
-           .text(docData.title, 50, startY, { align: 'center', width: 495 });
-           
-        const titleHeight = pdf.heightOfString(docData.title, { width: 495, align: 'center' });
-        startY += titleHeight + 25; 
-      } else {
-        startY = 100; 
-      }
+    
 
       // Body Content
       let rawText = page.content ? String(page.content) : ' ';

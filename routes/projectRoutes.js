@@ -28,6 +28,7 @@ router.route('/')
     checkPermission('projects_create'), 
     createProject
   );
+router.route('/').get(protect, getProjects).post(protect, createProject);
 
 // ==========================================
 // 2. Specialized Project Routes

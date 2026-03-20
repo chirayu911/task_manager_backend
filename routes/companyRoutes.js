@@ -1,13 +1,20 @@
 const express = require('express');
 const router = express.Router();
-// ⭐ FIX: Added getAllCompanies back into this import line!
-const { getAllCompanies, getMyCompany, updateMyCompany } = require('../controllers/companyController');
+const { 
+    getAllCompanies, 
+    getMyCompany, 
+    updateMyCompany, 
+    getCompanyUsage,
+    deleteCompany // ⭐ Added for Admin management
+} = require('../controllers/companyController');
 const { protect } = require('../middleware/authMiddleware');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
-// ⭐ Setup Multer for Company Logos
+// ==========================================
+// SETUP MULTER FOR LOGOS
+// ==========================================
 const uploadDir = path.join(__dirname, '../uploads/logos/');
 if (!fs.existsSync(uploadDir)){
     fs.mkdirSync(uploadDir, { recursive: true });
@@ -23,19 +30,41 @@ const storage = multer.diskStorage({
     }
 });
 
-const upload = multer({ storage });
+const upload = multer({ 
+    storage,
+    fileFilter: (req, file, cb) => {
+        // Only allow images
+        if (file.mimetype.startsWith('image/')) {
+            cb(null, true);
+        } else {
+            cb(new Error('Only image files are allowed!'), false);
+        }
+    }
+});
 
 // ==========================================
 // ROUTES
 // ==========================================
 
-// Get all companies (Usually for Super Admins)
+/**
+ * ⭐ NOTE ON ROUTE ORDER:
+ * Static routes like /all, /mine, and /usage must come BEFORE 
+ * parameterized routes like /:id to prevent the router from 
+ * mistaking "mine" as a company ID.
+ */
+
+// @desc    Get all companies (Superadmin view)
 router.get('/all', protect, getAllCompanies);
 
-// Get the specific company of the logged-in user
+// @desc    Get specific company details & usage (Scoped or Admin Context)
 router.get('/mine', protect, getMyCompany);
+router.get('/usage', protect, getCompanyUsage);
 
-// Update the specific company (Includes the multer middleware for the logo image)
+// @desc    Update company settings (Includes logo upload)
 router.put('/mine', protect, upload.single('logo'), updateMyCompany);
+
+// @desc    Delete a company (Admin Only)
+// @route   DELETE /api/company/:id
+router.delete('/:id', protect, deleteCompany);
 
 module.exports = router;

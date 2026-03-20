@@ -32,11 +32,7 @@ const userSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Role', 
     },
-    // ⭐ Permissions stored directly on user for fast checking
-    permissions: {
-      type: [String],
-      default: []
-    },
+   
     preferences: {
       autoSaveEnabled: { type: Boolean, default: false } 
     },
@@ -48,6 +44,7 @@ const userSchema = new mongoose.Schema(
     },
     isCompanyOwner: {
       type: Boolean,
+      role: ' company Owner',
       default: false,
     },
     resetPasswordToken: String,

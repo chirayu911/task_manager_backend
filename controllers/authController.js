@@ -5,6 +5,7 @@ const User = require('../models/User');
 const Company = require('../models/Company'); 
 const { sendEmail } = require('../utils/sendEmail');
 
+
 // Generate JWT Helper
 const generateToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, {
@@ -44,6 +45,7 @@ const registerUser = asyncHandler(async (req, res) => {
       name: user.name,
       email: user.email,
       role: user.role,
+      preferences: user.preferences,
       token: generateToken(user._id),
     });
   } else {
@@ -81,6 +83,7 @@ const loginUser = asyncHandler(async (req, res) => {
       email: user.email,
       company: user.company,
       isCompanyOwner: user.isCompanyOwner,
+      preferences: user.preferences,
       permissions: user.isCompanyOwner ? ['*'] : (user.role?.permissions || []),
     });
   } else {
@@ -112,6 +115,7 @@ const getMe = asyncHandler(async (req, res) => {
     email: user.email,
     role: user.role?.name || 'No Role',
     permissions: user.isCompanyOwner ? ['*'] : (user.role?.permissions || []), 
+    preferences: user.preferences,
     isCompanyOwner: user.isCompanyOwner,
     company: user.company
   });
@@ -129,15 +133,18 @@ const logoutUser = asyncHandler(async (req, res) => {
 
 /**
  * @desc    Update User Preferences
+ * @route   PUT /api/auth/preferences
+ * @access  Private
  */
 const updatePreferences = asyncHandler(async (req, res) => {
   const { autoSaveEnabled } = req.body;
-  
+
+  // Use dot notation to update only the specific nested field
   const user = await User.findByIdAndUpdate(
     req.user._id,
     { $set: { "preferences.autoSaveEnabled": autoSaveEnabled } },
-    { new: true }
-  );
+    { new: true, runValidators: true }
+  ).select('-password');
 
   if (!user) {
     res.status(404);
@@ -149,7 +156,6 @@ const updatePreferences = asyncHandler(async (req, res) => {
     preferences: user.preferences 
   });
 });
-
 /**
  * @desc    Register a new company and its owner
  * @route   POST /api/auth/register-company
@@ -162,46 +168,71 @@ const registerCompany = asyncHandler(async (req, res) => {
     phoneNumber, nominalCapital, industry, companyEmail
   } = req.body;
 
-  if (!username || !email || !password || !companyName) {
+  if (!username || !email || !password || !companyName || !companyEmail) {
     res.status(400);
     throw new Error('Please fill out all required fields.');
   }
 
+  // Check if User already exists
   const userExists = await User.findOne({ $or: [{ email }, { username }] });
   if (userExists) {
     res.status(400);
-    throw new Error('Email or Username is already taken.');
+    throw new Error('Email or Username is already taken by a user account.');
   }
 
-  // ⭐ 1. Combine Address fields into one string
+  // ⭐ FIX 1: Check if Company Email already exists
+  const companyExists = await Company.findOne({ companyEmail });
+  if (companyExists) {
+    res.status(400);
+    throw new Error('A company with this email is already registered.');
+  }
+
+  // Combine Address fields into one string
   const fullAddress = `${streetAddress}, ${city}, ${state} ${zipCode}, ${country}`;
 
-  // ⭐ 2. Create the Company first (to get the ID)
+  // Create the Company first (to get the ID)
   const company = await Company.create({
     companyName,
     ownerName: owner,
-    fullAddress, // matches your updated model
+    fullAddress, 
     companyEmail, 
     phoneNumber, 
     nominalCapital, 
     industry
   });
 
-  // ⭐ 3. Create the User with the Company ID (prevents validation error)
-  const user = await User.create({
-    name: owner,
-    email,
-    username, 
-    password,
-    role: ['company owner'],
-    company: company._id, // Linking here satisfies 'required: true'
-    isCompanyOwner: true,
-    permissions: ["*"]
-  });
+  // ⭐ FIX 2: Removed the invalid `role: ['company owner']` which caused the ObjectId CastError.
+  // We use a try/catch block to delete the company if user creation fails, preventing "ghost" companies.
+  let user;
+  try {
+    user = await User.create({
+      name: owner,
+      email,
+      username, 
+      password,
+      company: company._id, // Linking here satisfies 'required: true'
+       preferences: user.preferences,
+      isCompanyOwner: true
+    });
+  } catch (error) {
+    // Rollback: Delete the company if the user failed to create
+    await Company.findByIdAndDelete(company._id);
+    res.status(400);
+    throw new Error(error.message || 'Failed to create user account. Company registration aborted.');
+  }
 
-  // ⭐ 4. Finalize Company owner link
+  // Finalize Company owner link
   company.ownerId = user._id;
   await company.save();
+
+  // Log the user in immediately by generating a token
+  const token = generateToken(user._id);
+  res.cookie('jwt', token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'none',
+    maxAge: 30 * 24 * 60 * 60 * 1000 
+  });
 
   res.status(201).json({
     message: 'Company and Owner registered successfully',
@@ -209,8 +240,10 @@ const registerCompany = asyncHandler(async (req, res) => {
     name: user.name,
     username: user.username,
     email: user.email,
+     preferences: user.preferences,
     isCompanyOwner: user.isCompanyOwner,
-    company: company
+    company: company,
+    token // Sending token back just in case your frontend requires it
   });
 });
 
