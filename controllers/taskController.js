@@ -5,7 +5,7 @@ import Project from '../models/Project.js';
 import TaskStatus from '../models/TaskStatus.js';
 import Company from '../models/Company.js';
 import sendTaskEmail from '../utils/sendAssignEmail.js';
-import logActivity from '../utils/logActivity.js'; // ⭐ Import the utility at the top
+import logActivity from '../utils/logActivity.js';
 
 // @desc    Get all tasks (Scoped to Company)
 export const getTasks = async (req, res) => {
@@ -64,25 +64,52 @@ export const getTasks = async (req, res) => {
 // @desc    Get single task by ID
 export const getTaskById = async (req, res) => {
   try {
-    const task = await Task.findOne({
-      _id: req.params.id,
+    const { id } = req.params;
+    const { projectId } = req.query; // Optional: Pass project ID from frontend for stricter security
+
+    const query = {
+      _id: id,
       company: req.user.company
-    })
+    };
+
+    // If your frontend sends the project ID in the query params (?projectId=...)
+    if (projectId) {
+      query.project = projectId;
+    }
+
+    const task = await Task.findOne(query)
       .populate('assignedTo', 'name email')
       .populate({ path: 'status', model: 'TaskStatus' })
+      // Use .populate('project', 'name') if you need project details on the form
       .lean();
 
-    if (!task) return res.status(404).json({ message: 'Task not found' });
+    if (!task) {
+      return res.status(404).json({ message: 'Task or Issue not found' });
+    }
+
+    // Optional: Transform image/video paths here if they are stored as full system paths
+    // task.images = task.images.map(img => img.replace('public/', ''));
+
     res.json(task);
   } catch (error) {
-    res.status(500).json({ message: 'Invalid Task ID format' });
+    // Distinguish between a CastError (Invalid ID) and a server error
+    if (error.name === 'CastError') {
+      return res.status(400).json({ message: 'Invalid Task ID format' });
+    }
+    
+    console.error("GetTask Error:", error);
+    res.status(500).json({ message: 'Internal server error' });
   }
 };
 
-// @desc    Create Task or Issue
+// @desc    Create Task or Issue (Including Timeline & Hours)
 export const createTask = async (req, res) => {
   try {
-    const { title, description, status, assignedTo, project, itemType } = req.body;
+    const { 
+        title, description, status, assignedTo, project, itemType,
+        startDate, endDate, hours // ⭐ New Timeline Fields
+    } = req.body;
+    
     const taskType = itemType || 'Task';
     const userCompanyId = req.user.company;
 
@@ -104,7 +131,7 @@ export const createTask = async (req, res) => {
         const currentTaskCount = await Task.countDocuments({ company: userCompanyId });
         if (currentTaskCount >= maxTasks) {
           return res.status(403).json({
-            message: `Subscription Limit Reached: Your current plan allows a maximum of ${maxTasks} tasks. Please upgrade your plan.`
+            message: `Subscription Limit Reached: Your plan allows a max of ${maxTasks} tasks. Please upgrade.`
           });
         }
       }
@@ -123,22 +150,24 @@ export const createTask = async (req, res) => {
       images: imagePaths,
       videos: videoPaths,
       itemType: taskType,
-      createdBy: req.user._id
+      createdBy: req.user._id,
+      // ⭐ Storing Timeline
+      startDate: startDate || null,
+      endDate: endDate || null,
+      hours: Number(hours) || 0
     });
 
-    // ⭐ ACTIVITY LOG: Task Creation
+    // ⭐ ACTIVITY LOG: Creation
     await logActivity({
       user: req.user._id,
-      targetUser: assignedTo || null,
       company: userCompanyId,
       project: project,
       action: 'created',
       resourceType: taskType.toLowerCase() === 'issue' ? 'issue' : 'task',
       resourceId: task._id,
-      description: `Created ${taskType.toLowerCase()}: "${title.trim()}"`
+      description: `Created ${taskType.toLowerCase()}: "${title.trim()}" (${hours || 0} hrs estimated)`
     });
 
-    // ⭐ ACTIVITY LOG: If assigned immediately
     if (assignedTo) {
       const staff = await User.findById(assignedTo);
       if (staff?.email) {
@@ -167,7 +196,7 @@ export const createTask = async (req, res) => {
   }
 };
 
-// @desc    Bulk Create Tasks
+// @desc    Bulk Create Tasks (With Timeline mapping)
 export const bulkCreateTasks = async (req, res) => {
   try {
     const { items, project, type } = req.body;
@@ -178,20 +207,14 @@ export const bulkCreateTasks = async (req, res) => {
     const companyDoc = await Company.findById(userCompany).populate('subscriptionPlan').lean();
 
     if (!companyDoc?.subscriptionPlan?.hasBulkUpload) {
-      return res.status(403).json({
-        message: "Feature Restricted: Your current subscription plan does not include Bulk Import. Please upgrade to use this feature."
-      });
+      return res.status(403).json({ message: "Feature Restricted: Upgrade for Bulk Import." });
     }
 
     let maxAllowed = Infinity;
     const maxTasks = companyDoc.subscriptionPlan ? companyDoc.subscriptionPlan.maxTasks : 50;
     if (maxTasks !== -1) {
       const currentTaskCount = await Task.countDocuments({ company: userCompany });
-      const availableSlots = maxTasks - currentTaskCount;
-      if (availableSlots <= 0) {
-        return res.status(403).json({ message: "Subscription Limit Reached: You cannot import more tasks on your current plan." });
-      }
-      maxAllowed = availableSlots;
+      maxAllowed = Math.max(0, maxTasks - currentTaskCount);
     }
 
     const identifiers = [...new Set(items.map(item => {
@@ -204,7 +227,7 @@ export const bulkCreateTasks = async (req, res) => {
       TaskStatus.findOne({ project: projectObjectId }).lean(),
       User.find({
         company: userCompany,
-        $or: [ { email: { $in: identifiers } }, { name: { $in: identifiers } } ]
+        $or: [{ email: { $in: identifiers } }, { name: { $in: identifiers } }]
       }).select('_id email name').lean(),
       Project.findById(projectObjectId).select('members').lean()
     ]);
@@ -228,11 +251,6 @@ export const bulkCreateTasks = async (req, res) => {
       const iden = (item.assigneeEmail || item.Assignee || item.email || "").toString().toLowerCase().trim();
       let assigneeId = userLookupMap.get(iden) || null;
 
-      if (assigneeId && !memberSet.has(assigneeId.toString())) {
-        await Project.findByIdAndUpdate(projectObjectId, { $addToSet: { members: assigneeId } });
-        memberSet.add(assigneeId.toString());
-      }
-
       validTasks.push({
         title,
         description: item.description || "",
@@ -242,6 +260,10 @@ export const bulkCreateTasks = async (req, res) => {
         assignedTo: assigneeId,
         itemType: category,
         createdBy: req.user._id,
+        // ⭐ Map timeline from Import
+        startDate: item.startDate ? new Date(item.startDate) : null,
+        endDate: item.endDate ? new Date(item.endDate) : null,
+        hours: Number(item.hours) || 0,
         createdAt: new Date(),
         updatedAt: new Date()
       });
@@ -251,14 +273,13 @@ export const bulkCreateTasks = async (req, res) => {
     if (validTasks.length > 0) {
       await Task.collection.bulkWrite(validTasks.map(t => ({ insertOne: { document: t } })), { ordered: false });
       
-      // ⭐ ACTIVITY LOG: Bulk Import
       await logActivity({
         user: req.user._id,
         company: userCompany,
         project: project,
         action: 'uploaded',
-        resourceType: category.toLowerCase() === 'issue' ? 'issue' : 'task',
-        resourceId: projectObjectId, // Scoped to project for bulk
+        resourceType: category.toLowerCase(),
+        resourceId: projectObjectId,
         description: `Bulk imported ${validTasks.length} ${category.toLowerCase()}s`
       });
 
@@ -270,65 +291,48 @@ export const bulkCreateTasks = async (req, res) => {
   }
 };
 
-// @desc    Update Task or Issue
+// @desc    Update Task or Issue (Including Timeline & Hours)
 export const updateTask = async (req, res) => {
   try {
-    const { title, description, status, assignedTo, itemType } = req.body;
+    const { 
+        title, description, status, assignedTo, itemType,
+        startDate, endDate, hours // ⭐ New Timeline Fields
+    } = req.body;
 
     const oldTask = await Task.findOne({
       _id: req.params.id,
       company: req.user.company
     });
 
-    if (!oldTask) return res.status(404).json({ message: 'Task not found or access denied' });
+    if (!oldTask) return res.status(404).json({ message: 'Task not found' });
 
     const taskType = itemType || oldTask.itemType;
 
-    if (title && title.trim().toLowerCase() !== oldTask.title.toLowerCase()) {
-      const duplicate = await Task.findOne({
-        project: oldTask.project,
-        company: req.user.company,
-        title: { $regex: new RegExp(`^${title.trim()}$`, 'i') },
-        _id: { $ne: req.params.id }
-      }).lean();
-      if (duplicate) return res.status(400).json({ message: "Duplicate title detected." });
-    }
-
     const updatedTask = await Task.findByIdAndUpdate(
       req.params.id,
-      { title: title ? title.trim() : oldTask.title, description, status, assignedTo: assignedTo === "null" ? null : assignedTo, itemType: taskType },
+      { 
+        title: title ? title.trim() : oldTask.title, 
+        description, 
+        status, 
+        assignedTo: assignedTo === "null" ? null : assignedTo, 
+        itemType: taskType,
+        // ⭐ Update Timeline
+        startDate: startDate !== undefined ? startDate : oldTask.startDate,
+        endDate: endDate !== undefined ? endDate : oldTask.endDate,
+        hours: hours !== undefined ? Number(hours) : oldTask.hours
+      },
       { new: true }
     ).populate(['status', 'assignedTo']).lean();
 
-    // ⭐ ACTIVITY LOG: General Update
     await logActivity({
       user: req.user._id,
       company: req.user.company,
       project: oldTask.project,
       action: 'updated',
-      resourceType: taskType.toLowerCase() === 'issue' ? 'issue' : 'task',
+      resourceType: taskType.toLowerCase(),
       resourceId: updatedTask._id,
       description: `Updated ${taskType.toLowerCase()}: "${updatedTask.title}"`
     });
-
-    // ⭐ ACTIVITY LOG: Re-assignment check
-    if (assignedTo && assignedTo !== oldTask.assignedTo?.toString()) {
-      const staff = await User.findById(assignedTo);
-      if (staff?.email) {
-        sendTaskEmail(staff.email, staff.name, updatedTask.title, description, [], 'assignment', taskType);
-        
-        await logActivity({
-          user: req.user._id,
-          targetUser: assignedTo,
-          company: req.user.company,
-          project: oldTask.project,
-          action: 'assigned',
-          resourceType: taskType.toLowerCase() === 'issue' ? 'issue' : 'task',
-          resourceId: updatedTask._id,
-          description: `Re-assigned ${taskType.toLowerCase()} to ${staff.name}`
-        });
-      }
-    }
 
     const io = req.app.get('io');
     if (io) io.emit('taskUpdated', updatedTask);
@@ -346,15 +350,14 @@ export const deleteTask = async (req, res) => {
       company: req.user.company
     });
 
-    if (!task) return res.status(404).json({ message: 'Task not found or access denied' });
+    if (!task) return res.status(404).json({ message: 'Task not found' });
 
-    // ⭐ ACTIVITY LOG: Deletion
     await logActivity({
       user: req.user._id,
       company: req.user.company,
       project: task.project,
       action: 'deleted',
-      resourceType: task.itemType.toLowerCase() === 'issue' ? 'issue' : 'task',
+      resourceType: task.itemType.toLowerCase(),
       resourceId: task._id,
       description: `Deleted ${task.itemType.toLowerCase()}: "${task.title}"`
     });

@@ -13,6 +13,10 @@ const userSchema = new mongoose.Schema(
       unique: true,
       sparse: true, 
     },
+    profilePicture: {
+      type: String,
+      default: null,
+    },
     email: {
       type: String,
       required: [true, 'Please add an email'],

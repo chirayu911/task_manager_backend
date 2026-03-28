@@ -8,11 +8,13 @@ const {
   getUsers,
   getUserById, // <--- This was missing before
   updateUser,
+  updateProfile,
   deleteUser,
   getAllStaff
 } = require('../controllers/userController');
 
 const { protect } = require('../middleware/authMiddleware');
+const profileUpload = require('../middleware/profileUploadMiddleware');
 
 // Public Routes (Login/Logout)
 router.post('/login', loginUser);
@@ -21,6 +23,7 @@ router.post('/logout', logoutUser);
 // Protected Routes
 router.get('/me', protect, getMe);
 router.get('/', protect, getAllStaff);
+router.put('/profile', protect, profileUpload.single('profilePicture'), updateProfile);
 
 // Admin Routes for User Management
 router.route('/')

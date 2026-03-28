@@ -77,6 +77,7 @@ const loginUser = asyncHandler(async (req, res) => {
     name: user.name,
     username: user.username,
     email: user.email,
+    profilePicture: user.profilePicture,
     role: user.role?.name || 'No Role',
     company: user.company,       // ⭐ Include company ID in response
     isCompanyOwner: user.isCompanyOwner, // ⭐ Include owner status
@@ -115,6 +116,7 @@ const getMe = asyncHandler(async (req, res) => {
     name: user.name,
     username: user.username,
     email: user.email,
+    profilePicture: user.profilePicture,
     role: user.role?.name || 'No Role',
     // ⭐ Flatten permissions and handle Owner wildcard
     permissions: user.isCompanyOwner ? ['*'] : permissions,
@@ -235,6 +237,35 @@ const updateUser = asyncHandler(async (req, res) => {
   }
 
   res.json({ message: "User updated successfully" });
+});
+
+// ================= UPDATE OWN PROFILE =================
+const updateProfile = asyncHandler(async (req, res) => {
+  const updateData = {};
+  
+  if (req.body.name) updateData.name = req.body.name;
+  if (req.body.username) updateData.username = req.body.username;
+  if (req.file) updateData.profilePicture = req.file.path.replace(/\\/g, "/");
+
+  const updatedUser = await User.findByIdAndUpdate(
+    req.user.id || req.user._id,
+    { $set: updateData },
+    { new: true, runValidators: true }
+  ).select('-password');
+
+  if (!updatedUser) {
+    res.status(404);
+    throw new Error('User not found');
+  }
+
+  res.json({
+    _id: updatedUser._id,
+    name: updatedUser.name,
+    username: updatedUser.username,
+    email: updatedUser.email,
+    profilePicture: updatedUser.profilePicture,
+    message: "Profile updated successfully"
+  });
 });
 
 // ================= DELETE USER (Scoped to Company) =================
@@ -384,6 +415,7 @@ module.exports = {
   getUserById, 
   registerUser, 
   updateUser, 
+  updateProfile,
   deleteUser,
   forgotPassword, 
   resetPassword,

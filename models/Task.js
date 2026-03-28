@@ -40,6 +40,12 @@ const taskSchema = new mongoose.Schema({
   },
   images: [{ type: String }],
   videos: [{ type: String }],
+
+  // models/Task.js snippet
+startDate: { type: Date },
+endDate: { type: Date },
+hours: { type: Number, default: 0 },
+
   mentionedUsers: [
     {
       type: mongoose.Schema.Types.ObjectId,
