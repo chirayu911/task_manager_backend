@@ -8,6 +8,7 @@ const path = require('path');
 const requestMail = require('../utils/requestMail');
 const { buildCompanyPDF } = require('../utils/pdfGenerator');
 const logActivity = require('../utils/logActivity'); // ⭐ Imported the activity logger
+const logAudit = require('../utils/auditLogger');
 const puppeteer = require('puppeteer');
 
 // Helper to notify users (restored original notification logic)
@@ -107,6 +108,16 @@ exports.createDocument = async (req, res) => {
       action: req.file ? 'uploaded' : 'created',
       resourceType: 'document',
       resourceId: newDoc._id,
+      description: `${req.file ? 'Uploaded' : 'Created'} document: "${newDoc.title}"`
+    });
+
+    await logAudit(req, {
+      user: req.user._id,
+      company: userCompanyId,
+      action: 'CREATED',
+      resourceType: 'Document',
+      resourceId: newDoc._id,
+      afterState: newDoc.toObject ? newDoc.toObject() : newDoc,
       description: `${req.file ? 'Uploaded' : 'Created'} document: "${newDoc.title}"`
     });
 
@@ -319,6 +330,16 @@ exports.deleteDocument = async (req, res) => {
       description: `Deleted document: "${deletedDoc.title}"`
     });
 
+    await logAudit(req, {
+      user: req.user._id,
+      company: req.user.company,
+      action: 'DELETED',
+      resourceType: 'Document',
+      resourceId: deletedDoc._id,
+      beforeState: deletedDoc.toObject ? deletedDoc.toObject() : deletedDoc,
+      description: `Deleted document: "${deletedDoc.title}"`
+    });
+
     if (deletedDoc.fileUrl) {
       const filePath = path.join(__dirname, '..', deletedDoc.fileUrl);
       if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
@@ -361,6 +382,8 @@ exports.saveTextDocument = async (req, res) => {
       doc = await Document.findById(documentId);
       if (!doc) return res.status(404).json({ message: "Document not found" });
 
+      const oldDocState = doc.toObject ? doc.toObject() : doc;
+
       // Update Parent Document Metadata
       doc.title = title || doc.title;
       // We store the content of the first page in the main doc for search/previews
@@ -388,6 +411,17 @@ exports.saveTextDocument = async (req, res) => {
         // 3. Batch insert the new page structure
         await DocumentPage.insertMany(pageEntries);
       }
+
+      await logAudit(req, {
+        user: req.user._id,
+        company: userCompanyId,
+        action: 'UPDATED',
+        resourceType: 'Document',
+        resourceId: doc._id,
+        beforeState: oldDocState,
+        afterState: doc.toObject ? doc.toObject() : doc,
+        description: `Saved text document: "${doc.title}"`
+      });
 
       return res.status(200).json(doc);
     }
@@ -430,6 +464,16 @@ exports.saveTextDocument = async (req, res) => {
         });
       }
     }
+
+    await logAudit(req, {
+      user: req.user._id,
+      company: userCompanyId,
+      action: 'CREATED',
+      resourceType: 'Document',
+      resourceId: newDoc._id,
+      afterState: newDoc.toObject ? newDoc.toObject() : newDoc,
+      description: `Created text document: "${newDoc.title}"`
+    });
 
     res.status(201).json(newDoc);
   } catch (error) {
@@ -491,6 +535,17 @@ exports.updateDocument = async (req, res) => {
       action: 'updated',
       resourceType: 'document',
       resourceId: updatedDoc._id,
+      description: `Updated document settings/file for: "${updatedDoc.title}"`
+    });
+
+    await logAudit(req, {
+      user: req.user._id,
+      company: req.user.company,
+      action: 'UPDATED',
+      resourceType: 'Document',
+      resourceId: updatedDoc._id,
+      beforeState: oldDoc.toObject ? oldDoc.toObject() : oldDoc,
+      afterState: updatedDoc.toObject ? updatedDoc.toObject() : updatedDoc,
       description: `Updated document settings/file for: "${updatedDoc.title}"`
     });
 

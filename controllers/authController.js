@@ -4,6 +4,7 @@ const asyncHandler = require('express-async-handler');
 const User = require('../models/User');
 const Company = require('../models/Company'); 
 const { sendEmail } = require('../utils/sendEmail');
+const logAudit = require('../utils/auditLogger');
 
 
 // Generate JWT Helper
@@ -45,7 +46,7 @@ const registerUser = asyncHandler(async (req, res) => {
       name: user.name,
       email: user.email,
       role: user.role,
-      preferences: user.preferences,
+      preferences: user.preferences || {},
       token: generateToken(user._id),
     });
   } else {
@@ -75,6 +76,14 @@ const loginUser = asyncHandler(async (req, res) => {
       secure: true,
       sameSite: 'none',
       maxAge: 30 * 24 * 60 * 60 * 1000 
+    });
+
+    await logAudit(req, {
+      user: user._id,
+      company: user.company,
+      action: 'LOGIN',
+      resourceType: 'Auth',
+      description: `User ${user.email} logged in.`,
     });
 
     res.json({
@@ -129,6 +138,14 @@ const getMe = asyncHandler(async (req, res) => {
  * @access  Public
  */
 const logoutUser = asyncHandler(async (req, res) => {
+  // If the route was protected, we could use req.user. Since it might not be, we log what we can.
+  // Using decoding cookie logic is optional, but capturing IP and event is standard.
+  await logAudit(req, {
+    action: 'LOGOUT',
+    resourceType: 'Auth',
+    description: `User logged out.`,
+  });
+
   res.cookie('jwt', '', { httpOnly: true, expires: new Date(0) });
   res.status(200).json({ message: 'Logged out successfully' });
 });
@@ -213,7 +230,6 @@ const registerCompany = asyncHandler(async (req, res) => {
       username, 
       password,
       company: company._id, // Linking here satisfies 'required: true'
-       preferences: user.preferences,
       isCompanyOwner: true
     });
   } catch (error) {
@@ -234,6 +250,16 @@ const registerCompany = asyncHandler(async (req, res) => {
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'none',
     maxAge: 30 * 24 * 60 * 60 * 1000 
+  });
+
+  await logAudit(req, {
+    user: user._id,
+    company: company._id,
+    action: 'COMPANY_REGISTERED',
+    resourceType: 'Company',
+    resourceId: company._id,
+    afterState: company.toObject(),
+    description: `Company ${companyName} registered with owner ${email}.`,
   });
 
   res.status(201).json({

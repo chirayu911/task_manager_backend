@@ -74,7 +74,39 @@ app.set("io", io);
 
 io.on("connection", (socket) => {
   const userId = socket.handshake.auth?.userId;
-  if (userId) socket.join(userId);
+  if (userId) {
+    socket.join(userId);
+    console.log(`User ${userId} connected`);
+  }
+
+  // Handle joining a specific conversation room
+  socket.on("joinRoom", (roomId) => {
+    socket.join(roomId);
+    console.log(`User joined room: ${roomId}`);
+  });
+
+  socket.on("leaveRoom", (roomId) => {
+    socket.leave(roomId);
+  });
+
+  // Handle typing indicator
+  socket.on("typing", ({ roomId, user }) => {
+    socket.to(roomId).emit("typing", user);
+  });
+  
+  socket.on("stopTyping", ({ roomId, user }) => {
+    socket.to(roomId).emit("stopTyping", user);
+  });
+
+  // Also handle sendMessage natively through socket if desired
+  socket.on("sendMessage", async (data) => {
+    // The controller HTTP method is preferred for saving, but we can do it here too if needed.
+    // We already do it in the HTTP route, which then broadcasts via io.to().emit()
+  });
+
+  socket.on("disconnect", () => {
+    console.log("User disconnected");
+  });
 });
 
 // ---------------- ROUTES ----------------
@@ -94,6 +126,9 @@ app.use('/api/company', companyRoutes);
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use('/api/activities', activityRoutes);
 app.use('/api/website-settings', require('./routes/websiteSettingRoutes'));
+app.use('/api/admin', require('./routes/adminRoutes'));
+app.use('/api/chat', require('./routes/chatRoutes'));
+app.use('/api/reports', require('./routes/reportRoutes'));
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));

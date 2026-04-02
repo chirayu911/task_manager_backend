@@ -20,4 +20,7 @@ const activitySchema = new mongoose.Schema({
   description: { type: String },
 }, { timestamps: true });
 
+// Auto-delete activities after 7 days (604800 seconds)
+activitySchema.index({ createdAt: 1 }, { expireAfterSeconds: 604800 });
+
 module.exports = mongoose.models.Activity || mongoose.model('Activity', activitySchema);

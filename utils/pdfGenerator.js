@@ -5,11 +5,11 @@ const HTMLtoPDF = require('pdfkit-html-simple');
 
 exports.buildCompanyPDF = async (res, docData, companyData, pages) => {
   try {
-    const pdf = new PDFDocument({ 
+    const pdf = new PDFDocument({
       margin: 50,
       size: 'A4',
       info: {
-        Title: docData.title, 
+        Title: docData.title,
         Author: companyData?.companyName || "System"
       }
     });
@@ -19,15 +19,15 @@ exports.buildCompanyPDF = async (res, docData, companyData, pages) => {
     // However, explicit registration ensures the HTML parser can find the "Bold" variant.
     pdf.registerFont('Helvetica-Bold', 'Helvetica-Bold');
     pdf.registerFont('Helvetica-Oblique', 'Helvetica-Oblique');
-    
+
     const cleanFileName = docData.title.replace(/[^a-zA-Z0-9-_\s]/g, '').trim().replace(/\s+/g, '_');
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${cleanFileName}.pdf"`);
     pdf.pipe(res);
 
     const companyName = companyData?.companyName || "Organization Document";
-    const currentDate = new Date().toLocaleDateString('en-US', { 
-      year: 'numeric', month: 'long', day: 'numeric' 
+    const currentDate = new Date().toLocaleDateString('en-US', {
+      year: 'numeric', month: 'long', day: 'numeric'
     });
 
     let logoPath = null;

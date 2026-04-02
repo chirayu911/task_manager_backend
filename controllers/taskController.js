@@ -6,6 +6,7 @@ import TaskStatus from '../models/TaskStatus.js';
 import Company from '../models/Company.js';
 import sendTaskEmail from '../utils/sendAssignEmail.js';
 import logActivity from '../utils/logActivity.js';
+import logAudit from '../utils/auditLogger.js';
 
 // @desc    Get all tasks (Scoped to Company)
 export const getTasks = async (req, res) => {
@@ -190,6 +191,16 @@ export const createTask = async (req, res) => {
     const io = req.app.get('io');
     if (io) io.emit('taskCreated', populatedTask);
 
+    await logAudit(req, {
+      user: req.user._id,
+      company: userCompanyId,
+      action: 'CREATED',
+      resourceType: 'Task',
+      resourceId: task._id,
+      afterState: task.toObject ? task.toObject() : task,
+      description: `Created ${taskType.toLowerCase()}: "${title.trim()}"`,
+    });
+
     res.status(201).json(populatedTask);
   } catch (error) {
     res.status(400).json({ message: error.message });
@@ -283,6 +294,15 @@ export const bulkCreateTasks = async (req, res) => {
         description: `Bulk imported ${validTasks.length} ${category.toLowerCase()}s`
       });
 
+      await logAudit(req, {
+        user: req.user._id,
+        company: userCompany,
+        action: 'CREATED',
+        resourceType: 'Task',
+        description: `Bulk imported ${validTasks.length} ${category.toLowerCase()}s`,
+        afterState: { bulkTaskCount: validTasks.length, newTasks: validTasks },
+      });
+
       return res.status(201).json({ success: true, message: `Imported ${validTasks.length} items.` });
     }
     res.status(400).json({ message: "No new valid items to import." });
@@ -302,7 +322,7 @@ export const updateTask = async (req, res) => {
     const oldTask = await Task.findOne({
       _id: req.params.id,
       company: req.user.company
-    });
+    }).populate('status').populate('assignedTo');
 
     if (!oldTask) return res.status(404).json({ message: 'Task not found' });
 
@@ -324,6 +344,25 @@ export const updateTask = async (req, res) => {
       { new: true }
     ).populate(['status', 'assignedTo']).lean();
 
+    // ⭐ Build Detailed Activity Description
+    let changes = [];
+    if (oldTask.status?._id?.toString() !== updatedTask.status?._id?.toString()) {
+      const oldStatus = oldTask.status?.name || 'None';
+      const newStatus = updatedTask.status?.name || 'None';
+      changes.push(`status from '${oldStatus}' to '${newStatus}'`);
+    }
+    
+    if (oldTask.assignedTo?._id?.toString() !== updatedTask.assignedTo?._id?.toString()) {
+      const oldAsg = oldTask.assignedTo?.name || 'Unassigned';
+      const newAsg = updatedTask.assignedTo?.name || 'Unassigned';
+      changes.push(`assignee from '${oldAsg}' to '${newAsg}'`);
+    }
+
+    let descriptionStr = `Updated ${taskType.toLowerCase()}: "${updatedTask.title}"`;
+    if (changes.length > 0) {
+      descriptionStr += ` — Changed ${changes.join(' and ')}`;
+    }
+
     await logActivity({
       user: req.user._id,
       company: req.user.company,
@@ -331,7 +370,18 @@ export const updateTask = async (req, res) => {
       action: 'updated',
       resourceType: taskType.toLowerCase(),
       resourceId: updatedTask._id,
-      description: `Updated ${taskType.toLowerCase()}: "${updatedTask.title}"`
+      description: descriptionStr
+    });
+
+    await logAudit(req, {
+      user: req.user._id,
+      company: req.user.company,
+      action: 'UPDATED',
+      resourceType: 'Task',
+      resourceId: updatedTask._id,
+      beforeState: oldTask.toObject ? oldTask.toObject() : oldTask,
+      afterState: updatedTask,
+      description: descriptionStr
     });
 
     const io = req.app.get('io');
@@ -359,6 +409,16 @@ export const deleteTask = async (req, res) => {
       action: 'deleted',
       resourceType: task.itemType.toLowerCase(),
       resourceId: task._id,
+      description: `Deleted ${task.itemType.toLowerCase()}: "${task.title}"`
+    });
+
+    await logAudit(req, {
+      user: req.user._id,
+      company: req.user.company,
+      action: 'DELETED',
+      resourceType: 'Task',
+      resourceId: task._id,
+      beforeState: task.toObject ? task.toObject() : task,
       description: `Deleted ${task.itemType.toLowerCase()}: "${task.title}"`
     });
 

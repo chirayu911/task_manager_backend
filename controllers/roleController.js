@@ -5,7 +5,8 @@ const User = require('../models/User');
 // @desc    Get all roles
 // @route   GET /api/roles
 const getRoles = asyncHandler(async (req, res) => {
-  const roles = await Role.find({});
+  // Hide admin and superadmin roles so they cannot be seen or assigned via the UI
+  const roles = await Role.find({ name: { $nin: ['admin', 'superadmin'] } });
   res.json(roles);
 });
 

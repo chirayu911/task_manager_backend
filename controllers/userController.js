@@ -166,6 +166,15 @@ const registerUser = asyncHandler(async (req, res) => {
     throw new Error('User already exists');
   }
 
+  // Prevent assigning admin or superadmin role
+  if (role) {
+    const roleObj = await Role.findById(role);
+    if (roleObj && ['admin', 'superadmin'].includes(roleObj.name.toLowerCase())) {
+      res.status(403);
+      throw new Error('You are not authorized to assign the admin role.');
+    }
+  }
+
   const plainPassword = crypto.randomBytes(5).toString('hex');
 
   // ⭐ Auto-assign the creator's company to the new user
@@ -220,7 +229,16 @@ const updateUser = asyncHandler(async (req, res) => {
   user.name = req.body.name || user.name;
   user.email = req.body.email || user.email;
   user.username = req.body.username || user.username;
-  user.role = req.body.role || user.role;
+
+  // Prevent updating role TO admin or superadmin
+  if (req.body.role && req.body.role !== oldRoleId) {
+    const roleObj = await Role.findById(req.body.role);
+    if (roleObj && ['admin', 'superadmin'].includes(roleObj.name.toLowerCase())) {
+      res.status(403);
+      throw new Error('You are not authorized to assign the admin role.');
+    }
+    user.role = req.body.role;
+  }
 
   if (req.body.password) {
     user.password = req.body.password;
@@ -396,7 +414,8 @@ const getAllStaff = asyncHandler(async (req, res) => {
 
     const users = await User.find(query)
       .select('-password') 
-      .populate({ path: 'company', select: 'companyName' || all })
+      .populate({ path: 'company', select: 'companyName' })
+      .populate('role', 'name')
       .sort({ createdAt: -1 })
       .lean();
 

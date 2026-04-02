@@ -2,6 +2,8 @@ const asyncHandler = require('express-async-handler');
 const Project = require('../models/Project');
 const Company = require('../models/Company');
 const logActivity = require('../utils/logActivity'); // ⭐ Imported the activity logger
+const logAudit = require('../utils/auditLogger');
+const Conversation = require('../models/Conversation');
 
 /**
  * @desc    Get all projects (Scoped to Company)
@@ -110,6 +112,16 @@ const createProject = asyncHandler(async (req, res) => {
     description: `Created new project: "${title}"`
   });
 
+  await logAudit(req, {
+    user: req.user._id,
+    company: userCompanyId,
+    action: 'CREATED',
+    resourceType: 'Project',
+    resourceId: project._id,
+    afterState: project.toObject ? project.toObject() : project,
+    description: `Created new project: "${title}"`
+  });
+
   const populatedProject = await Project.findById(project._id).populate('assignedUsers', 'name email role');
   res.status(201).json(populatedProject);
 });
@@ -179,7 +191,34 @@ const updateProject = asyncHandler(async (req, res) => {
       resourceId: id,
       description: `Modified team membership for "${updatedProject.title}"`
     });
+
+    // ⭐ Chat Group Sync: Remove users who were dropped from the project
+    const oldIds = project.assignedUsers.map(u => u.toString());
+    const newIds = assignedUsers.map(u => u.toString());
+    const removedUsers = oldIds.filter(uid => !newIds.includes(uid));
+    
+    if (removedUsers.length > 0) {
+      await Conversation.updateOne(
+        { project: id },
+        { $pullAll: { participants: removedUsers } }
+      );
+      const io = req.app.get("io");
+      if (io) {
+        io.emit("updateConversationsList");
+      }
+    }
   }
+
+  await logAudit(req, {
+    user: req.user._id,
+    company: req.user.company,
+    action: 'UPDATED',
+    resourceType: 'Project',
+    resourceId: id,
+    beforeState: project.toObject ? project.toObject() : project,
+    afterState: updatedProject.toObject ? updatedProject.toObject() : updatedProject,
+    description: `Updated project: "${updatedProject.title}"`
+  });
 
   res.status(200).json(updatedProject);
 });
@@ -215,6 +254,16 @@ const deleteProject = asyncHandler(async (req, res) => {
     action: 'deleted',
     resourceType: 'project',
     resourceId: id,
+    description: `Deleted project: "${project.title}"`
+  });
+
+  await logAudit(req, {
+    user: req.user._id,
+    company: req.user.company,
+    action: 'DELETED',
+    resourceType: 'Project',
+    resourceId: id,
+    beforeState: project.toObject ? project.toObject() : project,
     description: `Deleted project: "${project.title}"`
   });
 

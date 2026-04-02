@@ -31,6 +31,10 @@ const companySchema = new mongoose.Schema({
   },
 
   // ⭐ Company Settings Fields
+  themeColor: {
+    type: String,
+    default: 'indigo' // Default primary app brand
+  },
   workingDays: {
     type: [String],
     default: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']

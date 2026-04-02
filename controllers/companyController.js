@@ -111,6 +111,7 @@ const updateMyCompany = asyncHandler(async (req, res) => {
     phoneNumber: req.body.phoneNumber || company.phoneNumber,
     fullAddress: req.body.fullAddress || company.fullAddress,
     industry: req.body.industry || company.industry,
+    themeColor: req.body.themeColor || company.themeColor,
     workingDays: req.body.workingDays ? JSON.parse(req.body.workingDays) : company.workingDays,
     workingHours: req.body.workingHours ? JSON.parse(req.body.workingHours) : company.workingHours,
     breakTimings: req.body.breakTimings ? JSON.parse(req.body.breakTimings) : company.breakTimings,
