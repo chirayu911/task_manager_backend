@@ -196,7 +196,7 @@ const updateProject = asyncHandler(async (req, res) => {
     const oldIds = project.assignedUsers.map(u => u.toString());
     const newIds = assignedUsers.map(u => u.toString());
     const removedUsers = oldIds.filter(uid => !newIds.includes(uid));
-    
+
     if (removedUsers.length > 0) {
       await Conversation.updateOne(
         { project: id },
@@ -283,7 +283,7 @@ const getProjectTeam = asyncHandler(async (req, res) => {
   }
 
   const project = await Project.findById(id).populate('assignedUsers', 'name email role');
-  
+
   if (!project) {
     return res.status(404).json({ message: 'Project not found' });
   }

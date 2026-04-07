@@ -21,7 +21,8 @@ const taskSchema = new mongoose.Schema({
   company: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Company',
-    required: true
+    required: false,
+    default: null
   },
   project: {
     type: mongoose.Schema.Types.ObjectId,
@@ -30,21 +31,21 @@ const taskSchema = new mongoose.Schema({
   },
   status: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'TaskStatus', 
+    ref: 'TaskStatus',
     required: true
   },
   assignedTo: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'User', 
+    ref: 'User',
     default: null
   },
   images: [{ type: String }],
   videos: [{ type: String }],
 
   // models/Task.js snippet
-startDate: { type: Date },
-endDate: { type: Date },
-hours: { type: Number, default: 0 },
+  startDate: { type: Date },
+  endDate: { type: Date },
+  hours: { type: Number, default: 0 },
 
   mentionedUsers: [
     {
@@ -58,13 +59,13 @@ hours: { type: Number, default: 0 },
     required: true
   }
 }, {
-  timestamps: true 
+  timestamps: true
 });
 
 // ⭐ PERFORMANCE INDEXES
 taskSchema.index({ company: 1 }); // Essential for multi-tenant isolation
 taskSchema.index({ assignedTo: 1 });
 taskSchema.index({ status: 1 });
-taskSchema.index({ itemType: 1 }); 
+taskSchema.index({ itemType: 1 });
 
 module.exports = mongoose.model('Task', taskSchema);

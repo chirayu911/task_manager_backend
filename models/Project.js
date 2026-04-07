@@ -1,30 +1,31 @@
 const mongoose = require('mongoose');
 
 const projectSchema = new mongoose.Schema({
-  title: { 
-    type: String, 
-    required: true, 
-    trim: true 
+  title: {
+    type: String,
+    required: true,
+    trim: true
   },
-  description: { 
-    type: String, 
-    trim: true 
+  description: {
+    type: String,
+    trim: true
   },
   // ⭐ Multi-Tenancy Anchor
   company: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Company',
-    required: true
+    required: false,
+    default: null
   },
   // Users within the same company assigned to this project
-  assignedUsers: [{ 
-    type: mongoose.Schema.Types.ObjectId, 
-    ref: 'User' 
+  assignedUsers: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
   }],
-  createdBy: { 
-    type: mongoose.Schema.Types.ObjectId, 
+  createdBy: {
+    type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: true 
+    required: true
   }
 }, { timestamps: true });
 

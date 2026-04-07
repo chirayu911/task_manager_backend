@@ -60,51 +60,38 @@ const sendTaskEmail = async (recipientEmail, staffName, taskTitle, description =
       subject: subject,
       attachments: attachments,
       html: `
-        <div style="background-color: #f9fafb; padding: 40px 0; font-family: 'Segoe UI', sans-serif;">
-          <div style="max-width: 550px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08); border: 1px solid #e5e7eb;">
+        <div style="font-family: 'Segoe UI', Arial, sans-serif; padding: 40px; background-color: #f3f4f6;">
+          <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; padding: 30px; border-radius: 16px; border-top: 4px solid ${headerColor}; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
+            <h2 style="color: #111827; margin-top: 0;">${isMention ? 'New Mention' : `New ${label} Assigned`}</h2>
+            <p style="color: #374151; font-size: 16px; line-height: 1.6;">
+              Hi <strong>${staffName}</strong>,<br/>
+              ${isMention 
+                ? `You have been mentioned in an <strong>${label.toLowerCase()}</strong> discussion.` 
+                : `A new <strong>${label.toLowerCase()}</strong> has been assigned to you.`}
+            </p>
             
-            <div style="background-color: ${headerColor}; padding: 30px; text-align: center;">
-              <div style="display: inline-block; background: rgba(255,255,255,0.2); padding: 10px; border-radius: 12px; margin-bottom: 15px;">
-                <span style="font-size: 32px;">${icon}</span>
-              </div>
-              <h2 style="color: #ffffff; margin: 0; font-size: 22px;">
-                Project ${label} - ${isMention ? 'New Mention' : 'New Assignment'}
-              </h2>
+            <div style="background-color: #f9fafb; padding: 20px; border-radius: 12px; border: 1px solid #e5e7eb; margin: 25px 0;">
+              <div style="color: #6b7280; font-size: 11px; text-transform: uppercase; font-weight: 800; letter-spacing: 0.05em; margin-bottom: 8px;">${label} Title</div>
+              <div style="color: #111827; font-size: 18px; font-weight: bold; margin-bottom: 16px;">${taskTitle}</div>
+              
+              <div style="color: #6b7280; font-size: 11px; text-transform: uppercase; font-weight: 800; letter-spacing: 0.05em; margin-bottom: 8px;">Description</div>
+              <div style="color: #4b5563; font-size: 14px; line-height: 1.5; white-space: pre-wrap;">${description || 'No description provided.'}</div>
             </div>
 
-            <div style="padding: 40px 30px;">
-              <p style="color: #374151; font-size: 16px;">Hi <strong>${staffName}</strong>,</p>
-              
-              <p style="color: #4b5563; font-size: 15px; line-height: 1.6;">
-                ${isMention 
-                  ? `You have been mentioned in an **${label.toLowerCase()}** discussion. Review the details below:` 
-                  : `A new **${label.toLowerCase()}** has been assigned to you in the system.`}
-              </p>
-              
-              <div style="background-color: #f3f4f6; border-left: 4px solid ${headerColor}; padding: 20px; border-radius: 8px; margin: 25px 0;">
-                <span style="color: #6b7280; font-size: 11px; text-transform: uppercase; font-weight: bold;">${label} Title</span>
-                <p style="color: #111827; font-size: 17px; font-weight: 700; margin: 5px 0 15px 0;">${taskTitle}</p>
-                
-                <span style="color: #6b7280; font-size: 11px; text-transform: uppercase; font-weight: bold;">Description</span>
-                <p style="color: #4b5563; font-size: 14px; margin: 5px 0 0 0; white-space: pre-wrap;">${description || 'No description provided.'}</p>
-              </div>
+            ${attachments.length > 0 ? `
+              <p style="color: #6b7280; font-size: 12px; margin-bottom: 20px;">📎 <strong>${attachments.length} Attachment(s)</strong> included in this email.</p>
+            ` : ''}
 
-              ${attachments.length > 0 ? `
-                <p style="color: #6b7280; font-size: 12px; margin-bottom: 10px;">📎 <strong>${attachments.length} Attachment(s)</strong> included in this email.</p>
-              ` : ''}
-
-              <div style="text-align: center; margin: 35px 0;">
-                <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/${isTask ? 'tasks' : 'issues'}" 
-                   style="background-color: ${headerColor}; color: #ffffff; padding: 14px 32px; text-decoration: none; border-radius: 10px; font-weight: 600; display: inline-block;">
-                   View ${label}
-                </a>
-              </div>
+            <div style="margin-top: 30px;">
+              <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/${isTask ? 'tasks' : 'issues'}" 
+                 style="display: inline-block; padding: 14px 28px; background-color: ${headerColor}; color: #ffffff; text-decoration: none; border-radius: 10px; font-weight: bold; font-size: 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+                View ${label}
+              </a>
             </div>
 
-            <div style="background-color: #f9fafb; padding: 20px; text-align: center; border-top: 1px solid #f3f4f6;">
+            <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #f3f4f6; text-align: center;">
               <p style="color: #9ca3af; font-size: 11px; margin: 0;">
-                Sent from the Task Automator<br/>
-                &copy; 2026 task manager system. All rights reserved.
+                Sent from Task Manager System &bull; &copy; 2026
               </p>
             </div>
           </div>

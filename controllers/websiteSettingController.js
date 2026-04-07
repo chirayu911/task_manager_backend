@@ -7,7 +7,7 @@ exports.getSettings = async (req, res) => {
   try {
     let settings = await WebsiteSetting.findOne();
     if (!settings) {
-      settings = new WebsiteSetting({ logo: null, images: [], videos: [] });
+      settings = new WebsiteSetting({ logo: null, images: [], videos: [], features: [] });
       await settings.save();
     }
     res.status(200).json(settings);
@@ -19,30 +19,40 @@ exports.getSettings = async (req, res) => {
 // Update the website settings and handle uploaded files
 exports.updateSettings = async (req, res) => {
   try {
-    const { existingImages, existingVideos } = req.body;
+    const { 
+      existingImages, existingVideos, featuresData,
+      adminName, adminEmail, adminMobile,
+      companyAddress, companyEmail, companyPhone
+    } = req.body;
     
     // Parse arrays correctly, or default to empty array
     let processedExistingImages = [];
     if (existingImages) {
-        processedExistingImages = Array.isArray(existingImages) ? existingImages : [existingImages];
+      processedExistingImages = Array.isArray(existingImages) ? existingImages : [existingImages];
     }
     
     let processedExistingVideos = [];
     if (existingVideos) {
-        processedExistingVideos = Array.isArray(existingVideos) ? existingVideos : [existingVideos];
+      processedExistingVideos = Array.isArray(existingVideos) ? existingVideos : [existingVideos];
     }
     
     let settings = await WebsiteSetting.findOne();
     if (!settings) {
       settings = new WebsiteSetting();
     }
+    
+    // Update contact and admin fields
+    settings.adminName = adminName || '';
+    settings.adminEmail = adminEmail || '';
+    settings.adminMobile = adminMobile || '';
+    settings.companyAddress = companyAddress || '';
+    settings.companyEmail = companyEmail || '';
+    settings.companyPhone = companyPhone || '';
 
     // Process new files uploaded by multer
-    // multer provides req.files as an object with arrays if we use upload.fields()
     if (req.files) {
       // Handle Logo upload (single file)
       if (req.files.logo && req.files.logo.length > 0) {
-        // Option to delete the old logo if necessary (simplified here)
         settings.logo = req.files.logo[0].path.replace(/\\/g, "/"); 
       }
 
@@ -62,9 +72,31 @@ exports.updateSettings = async (req, res) => {
         settings.videos = processedExistingVideos;
       }
     } else {
-      // No new files uploaded, just keep the existing ones maintained from the frontend array
       settings.images = processedExistingImages;
       settings.videos = processedExistingVideos;
+    }
+
+    // Process features (title, description + per-feature screenshot)
+    if (featuresData) {
+      const parsedFeatures = JSON.parse(featuresData); // Array of { id, title, description, existingScreenshot }
+
+      // Screenshot uploads are keyed as featureScreenshots_<index>
+      // But we sent them all as 'featureScreenshots' with index context from order
+      const uploadedScreenshots = req.files?.featureScreenshots?.map(f => f.path.replace(/\\/g, "/")) || [];
+
+      let screenshotPointer = 0;
+      settings.features = parsedFeatures.map((f) => {
+        let screenshot = f.existingScreenshot || null;
+        if (f.hasNewScreenshot) {
+          screenshot = uploadedScreenshots[screenshotPointer++] || null;
+        }
+        return {
+          _id: f._id || undefined,
+          title: f.title || '',
+          description: f.description || '',
+          screenshot
+        };
+      });
     }
 
     await settings.save();

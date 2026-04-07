@@ -42,7 +42,19 @@ const getAllCompanies = asyncHandler(async (req, res) => {
 // @desc    Get specific company details (Context-Aware)
 // @route   GET /api/company/mine
 const getMyCompany = asyncHandler(async (req, res) => {
-  const { id: companyId } = resolveCompanyContext(req);
+  const { id: companyId, isSystemAdmin } = resolveCompanyContext(req);
+
+  // ⭐ If Super Admin has NO company, return a "Global Base" response
+  if (!companyId && isSystemAdmin) {
+    return res.status(200).json({
+      _id: null,
+      companyName: 'Global Base (System)',
+      companyEmail: 'admin@system.com',
+      industry: 'System Administration',
+      themeColor: '#4f46e5', // Default Indigo
+      isGlobal: true,
+    });
+  }
 
   if (!companyId) {
     res.status(404);
@@ -64,20 +76,20 @@ const getMyCompany = asyncHandler(async (req, res) => {
 const updateMyCompany = asyncHandler(async (req, res) => {
   // 1. Identify User Role & Global Permission
   const roleName = typeof req.user.role === 'object' ? req.user.role?.name : req.user.role;
-  
+
   // Check for 'admin', 'superadmin', or the '*' permission string
-  const isGlobalAdmin = 
-    roleName?.toLowerCase() === 'admin' || 
-    roleName?.toLowerCase() === 'superadmin' || 
+  const isGlobalAdmin =
+    roleName?.toLowerCase() === 'admin' ||
+    roleName?.toLowerCase() === 'superadmin' ||
     req.user.permissions?.includes('*');
 
   // 2. Resolve the Target Company (The "Context")
   const activeHeaderId = req.headers['x-active-company-id'];
-  
+
   // ⭐ THE FIX: If Global Admin, prioritize the Navbar selection (Header).
   // If not, fall back to the user's assigned company.
-  const companyId = (isGlobalAdmin && activeHeaderId && activeHeaderId !== 'all') 
-    ? activeHeaderId 
+  const companyId = (isGlobalAdmin && activeHeaderId && activeHeaderId !== 'all')
+    ? activeHeaderId
     : req.user.company;
 
   console.log(`🛠️ Update Attempt by ${roleName}. Target Company: ${companyId}`);
@@ -139,12 +151,32 @@ const getCompanyUsage = asyncHandler(async (req, res) => {
   const isSystemAdmin = roleName === 'admin' || roleName === 'superadmin' || req.user.permissions?.includes('*');
 
   const activeHeaderId = req.headers['x-active-company-id'];
-  const companyId = isSystemAdmin && activeHeaderId && activeHeaderId !== 'all' 
-    ? activeHeaderId 
+  const companyId = isSystemAdmin && activeHeaderId && activeHeaderId !== 'all'
+    ? activeHeaderId
     : req.user.company;
 
-  if (!companyId || companyId === 'all') {
-    return res.status(200).json({ noContext: true });
+  // ⭐ Aggregated Stats for Global Admin
+  if (!companyId || activeHeaderId === 'all') {
+    if (!isSystemAdmin) {
+      return res.status(403).json({ message: 'Context required' });
+    }
+
+    const [totalProjects, totalTasks, totalStaff, totalCompanies] = await Promise.all([
+      Project.countDocuments({}),
+      Task.countDocuments({}),
+      User.countDocuments({}),
+      Company.countDocuments({}),
+    ]);
+
+    return res.status(200).json({
+      planName: 'Platform Wide',
+      status: 'active',
+      isAggregated: true,
+      staff: { current: totalStaff, max: '∞' },
+      projects: { current: totalProjects, max: '∞' },
+      tasks: { current: totalTasks, max: '∞' },
+      companies: { current: totalCompanies, max: '∞' },
+    });
   }
 
   const company = await Company.findById(companyId).populate('subscriptionPlan');
@@ -178,7 +210,7 @@ const getCompanyUsage = asyncHandler(async (req, res) => {
 const deleteCompany = asyncHandler(async (req, res) => {
   const roleName = typeof req.user.role === 'object' ? req.user.role?.name : req.user.role;
   const isSuperAdmin = req.user.permissions?.includes('*') || roleName === 'admin';
-  
+
   if (!isSuperAdmin) {
     res.status(403);
     throw new Error('Only system admins can delete companies');

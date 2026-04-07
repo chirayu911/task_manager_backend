@@ -26,11 +26,15 @@ const seedAdmin = async () => {
       console.log("✅ Admin role exists");
     }
 
-    // 2️⃣ Check admin user by username (safer)
+    // 2️⃣ Check admin user by username
     const adminExists = await User.findOne({ username: "admin" });
 
     if (adminExists) {
-      console.log("✅ Admin user already exists");
+      console.log("🔄 Updating existing Admin to Global context...");
+      adminExists.company = null;
+      adminExists.role = adminRole._id;
+      await adminExists.save();
+      console.log("✅ Admin updated successfully");
       process.exit(0);
     }
 
@@ -43,6 +47,7 @@ const seedAdmin = async () => {
       email: "admin@test.com",
       password: hashedPassword,
       role: adminRole._id,
+      company: null, // explicit global context
       status: "Active"
     });
 

@@ -15,7 +15,8 @@ router.put('/',
   websiteUploadMiddleware.fields([
     { name: 'logo', maxCount: 1 },
     { name: 'images', maxCount: 10 },
-    { name: 'videos', maxCount: 5 }
+    { name: 'videos', maxCount: 5 },
+    { name: 'featureScreenshots', maxCount: 20 }
   ]),
   websiteSettingController.updateSettings
 );

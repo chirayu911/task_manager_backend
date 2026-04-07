@@ -27,7 +27,8 @@ const documentRoutes = require('./routes/documentRoutes');
 // ⭐ Update these with your ACTUAL Dev Tunnel URLs
 const allowedOrigins = [
   "https://fm8bp5cj-3000.inc1.devtunnels.ms", // Your Frontend Tunnel
-  "http://localhost:3000"
+  "http://localhost:3000",
+  "https://task-manager-frontend-bb1q-e8ycvjxj8-chirayu911s-projects.vercel.app"
 ];
 
 // ---------------- MIDDLEWARE ----------------

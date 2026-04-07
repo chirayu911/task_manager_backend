@@ -11,7 +11,7 @@ const userSchema = new mongoose.Schema(
     username: {
       type: String,
       unique: true,
-      sparse: true, 
+      sparse: true,
     },
     profilePicture: {
       type: String,
@@ -30,21 +30,22 @@ const userSchema = new mongoose.Schema(
       type: String,
       required: [true, 'Please add a password'],
       minlength: [6, 'Password must be at least 6 characters'],
-      select: false, 
+      select: false,
     },
     role: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'Role', 
+      ref: 'Role',
     },
-   
+
     preferences: {
-      autoSaveEnabled: { type: Boolean, default: false } 
+      autoSaveEnabled: { type: Boolean, default: false }
     },
     // ⭐ Multi-Tenancy: Links the user to their specific company
     company: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Company',
-      required: true
+      required: false,
+      default: null
     },
     isCompanyOwner: {
       type: Boolean,

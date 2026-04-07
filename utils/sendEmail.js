@@ -24,15 +24,15 @@ const sendWelcomeEmail = async (email, name, username, password) => {
       to: email,
       subject: '🚀 Welcome aboard! Your login credentials inside',
       html: `
-        <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: auto; border: 1px solid #e0e0e0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.05);">
-          <div style="background-color: #2563eb; padding: 30px; text-align: center;">
-            <h1 style="color: white; margin: 0; font-size: 24px;">Welcome to the Team, ${name}!</h1>
-          </div>
-          <div style="padding: 30px; background-color: white;">
-            <p style="color: #4b5563; font-size: 16px; line-height: 1.6;">Your account has been successfully created. You can now log in to the Task Management Portal using the credentials below:</p>
+        <div style="font-family: 'Segoe UI', Arial, sans-serif; padding: 40px; background-color: #f3f4f6;">
+          <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; padding: 30px; border-radius: 16px; border-top: 4px solid #2563eb; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
+            <h2 style="color: #111827; margin-top: 0;">Welcome to the Team, ${name}!</h2>
+            <p style="color: #374151; font-size: 16px; line-height: 1.6;">
+              Your account has been successfully created. You can now log in to the Task Management Portal using the credentials below:
+            </p>
             
-            <div style="background-color: #f3f4f6; padding: 20px; border-radius: 8px; margin: 25px 0;">
-              <table style="width: 100%;">
+            <div style="background-color: #f9fafb; padding: 20px; border-radius: 12px; border: 1px solid #e5e7eb; margin: 25px 0;">
+              <table style="width: 100%; border-collapse: collapse;">
                 <tr>
                   <td style="color: #6b7280; font-size: 14px; padding-bottom: 10px;">Username</td>
                   <td style="color: #111827; font-weight: bold; font-size: 15px; padding-bottom: 10px; text-align: right;">${username}</td>
@@ -44,38 +44,35 @@ const sendWelcomeEmail = async (email, name, username, password) => {
               </table>
             </div>
 
-            <div style="text-align: center; margin: 35px 0;">
+            <div style="margin-top: 30px;">
               <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}" 
-                 style="background-color: #2563eb; color: white; padding: 14px 30px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px; display: inline-block;">
+                 style="display: inline-block; padding: 14px 28px; background-color: #2563eb; color: #ffffff; text-decoration: none; border-radius: 10px; font-weight: bold; font-size: 14px; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);">
                 Get Started Now
               </a>
             </div>
 
-            <div style="border-top: 1px solid #f3f4f6; padding-top: 20px;">
-              <p style="color: #9ca3af; font-size: 12px; text-align: center;">
+            <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #f3f4f6; text-align: center;">
+              <p style="color: #9ca3af; font-size: 11px; margin-bottom: 5px;">
                 <strong>Security Notice:</strong> Please change your password after logging in.
               </p>
+              <p style="color: #9ca3af; font-size: 11px; margin: 0;">
+                &copy; 2026 Gujarat Power Engineering and Research Institute (GPERI)
+              </p>
             </div>
-          </div>
-          <div style="background-color: #f9fafb; padding: 15px; text-align: center; color: #9ca3af; font-size: 12px;">
-            &copy; 2026 Gujarat Power Engineering and Research Institute (GPERI)
           </div>
         </div>
       `,
     };
 
-    // Added 'await' here to ensure the function waits for the email to send
     const info = await transporter.sendMail(mailOptions);
     console.log('✅ Welcome Email sent successfully:', info.messageId);
     return info;
   } catch (error) {
     console.error('❌ Welcome Email dispatch failed:', error);
-    // Logging to DevOps dashboard is a great practice!
     throw new Error('Email delivery failed');
   }
 };
 
-// 2. The New Forgot Password / Generic Email Function
 const sendEmail = async (options) => {
   try {
     const transporter = createTransporter();
@@ -84,19 +81,19 @@ const sendEmail = async (options) => {
       from: `"Task Management System" <${process.env.EMAIL_USER}>`,
       to: options.to,
       subject: options.subject,
-      // Wrapped the authController's message in your beautiful GPERI template!
       html: `
-        <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: auto; border: 1px solid #e0e0e0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.05);">
-          <div style="background-color: #2563eb; padding: 30px; text-align: center;">
-            <h1 style="color: white; margin: 0; font-size: 24px;">Security Request</h1>
-          </div>
-          <div style="padding: 30px; background-color: white;">
-            <div style="color: #4b5563; font-size: 16px; line-height: 1.6;">
+        <div style="font-family: 'Segoe UI', Arial, sans-serif; padding: 40px; background-color: #f3f4f6;">
+          <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; padding: 30px; border-radius: 16px; border-top: 4px solid #2563eb; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
+            <h2 style="color: #111827; margin-top: 0;">Security Request</h2>
+            <div style="color: #374151; font-size: 16px; line-height: 1.6; margin: 20px 0;">
               ${options.text}
             </div>
-          </div>
-          <div style="background-color: #f9fafb; padding: 15px; text-align: center; color: #9ca3af; font-size: 12px;">
-            &copy; 2026 Gujarat Power Engineering and Research Institute (GPERI)
+            
+            <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #f3f4f6; text-align: center;">
+              <p style="color: #9ca3af; font-size: 11px; margin: 0;">
+                &copy; 2026 Gujarat Power Engineering and Research Institute (GPERI)
+              </p>
+            </div>
           </div>
         </div>
       `,

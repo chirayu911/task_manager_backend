@@ -30,13 +30,34 @@ export const getTasks = async (req, res) => {
       query.itemType = { $regex: new RegExp(`^${itemType}$`, 'i') };
     }
 
+    // Role-based and Permission-based filtering
     if (req.user) {
       const roleName = typeof req.user.role === 'object' ? req.user.role?.name : req.user.role;
-      const isOwner = req.user.isCompanyOwner;
+      const isAdmin = roleName === 'admin' || roleName === 'superadmin' || req.user.isCompanyOwner;
 
-      if (roleName !== 'admin' && roleName !== 'superadmin' && !isOwner) {
-        query.$or = [{ assignedTo: req.user._id }, { mentionedUsers: req.user._id }];
+      if (!isAdmin) {
+        // Verify project membership
+        const projectDoc = await Project.findById(project).lean();
+        if (!projectDoc || !projectDoc.assignedUsers.some(uid => uid.toString() === req.user._id.toString())) {
+          return res.status(403).json({ message: 'Access Denied: You are not a member of this project' });
+        }
       }
+
+      // Handle Filter Modes
+      const { filterMode } = req.query;
+      if (filterMode === 'my_tasks' || filterMode === `my_${itemType}s` || filterMode === `my_${itemType}`) {
+        query.assignedTo = req.user._id;
+      } else if (filterMode === 'my_mentions') {
+        const userId = new mongoose.Types.ObjectId(req.user._id);
+        query.mentionedUsers = { $in: [userId] };
+      } else if (filterMode === 'unassigned') {
+        query.assignedTo = null;
+      } else if (mongoose.Types.ObjectId.isValid(filterMode)) {
+        // Individual staff filter
+        query.assignedTo = filterMode;
+      }
+      // If filterMode is 'all_tasks' or 'all_Issues', we don't add extra filters, 
+      // showing all tasks in the project since membership is already verified above.
     }
 
     const [tasks, totalItems] = await Promise.all([
@@ -97,7 +118,7 @@ export const getTaskById = async (req, res) => {
     if (error.name === 'CastError') {
       return res.status(400).json({ message: 'Invalid Task ID format' });
     }
-    
+
     console.error("GetTask Error:", error);
     res.status(500).json({ message: 'Internal server error' });
   }
@@ -106,11 +127,11 @@ export const getTaskById = async (req, res) => {
 // @desc    Create Task or Issue (Including Timeline & Hours)
 export const createTask = async (req, res) => {
   try {
-    const { 
-        title, description, status, assignedTo, project, itemType,
-        startDate, endDate, hours // ⭐ New Timeline Fields
+    const {
+      title, description, status, assignedTo, project, itemType,
+      startDate, endDate, hours // ⭐ New Timeline Fields
     } = req.body;
-    
+
     const taskType = itemType || 'Task';
     const userCompanyId = req.user.company;
 
@@ -148,6 +169,7 @@ export const createTask = async (req, res) => {
       project,
       company: userCompanyId,
       assignedTo: assignedTo || null,
+      mentionedUsers: req.body.mentionedUsers ? JSON.parse(req.body.mentionedUsers) : [],
       images: imagePaths,
       videos: videoPaths,
       itemType: taskType,
@@ -173,7 +195,7 @@ export const createTask = async (req, res) => {
       const staff = await User.findById(assignedTo);
       if (staff?.email) {
         sendTaskEmail(staff.email, staff.name, title, description, [...imagePaths, ...videoPaths], 'assignment', taskType);
-        
+
         await logActivity({
           user: req.user._id,
           targetUser: assignedTo,
@@ -185,6 +207,17 @@ export const createTask = async (req, res) => {
           description: `Assigned ${taskType.toLowerCase()} to ${staff.name}`
         });
       }
+    }
+
+    // ⭐ MENTION EMAILS: Send to all mentioned users
+    const mentionedIds = task.mentionedUsers || [];
+    if (mentionedIds.length > 0) {
+      const mentionedUsers = await User.find({ _id: { $in: mentionedIds } });
+      mentionedUsers.forEach(mUser => {
+        if (mUser.email && mUser._id.toString() !== assignedTo?.toString()) {
+          sendTaskEmail(mUser.email, mUser.name, title, description, [...imagePaths, ...videoPaths], 'mention', taskType);
+        }
+      });
     }
 
     const populatedTask = await task.populate(['status', 'assignedTo']);
@@ -283,7 +316,7 @@ export const bulkCreateTasks = async (req, res) => {
 
     if (validTasks.length > 0) {
       await Task.collection.bulkWrite(validTasks.map(t => ({ insertOne: { document: t } })), { ordered: false });
-      
+
       await logActivity({
         user: req.user._id,
         company: userCompany,
@@ -314,9 +347,9 @@ export const bulkCreateTasks = async (req, res) => {
 // @desc    Update Task or Issue (Including Timeline & Hours)
 export const updateTask = async (req, res) => {
   try {
-    const { 
-        title, description, status, assignedTo, itemType,
-        startDate, endDate, hours // ⭐ New Timeline Fields
+    const {
+      title, description, status, assignedTo, itemType,
+      startDate, endDate, hours // ⭐ New Timeline Fields
     } = req.body;
 
     const oldTask = await Task.findOne({
@@ -330,11 +363,12 @@ export const updateTask = async (req, res) => {
 
     const updatedTask = await Task.findByIdAndUpdate(
       req.params.id,
-      { 
-        title: title ? title.trim() : oldTask.title, 
-        description, 
-        status, 
-        assignedTo: assignedTo === "null" ? null : assignedTo, 
+      {
+        title: title ? title.trim() : oldTask.title,
+        description,
+        status,
+        assignedTo: assignedTo === "null" ? null : assignedTo,
+        mentionedUsers: req.body.mentionedUsers ? JSON.parse(req.body.mentionedUsers) : oldTask.mentionedUsers,
         itemType: taskType,
         // ⭐ Update Timeline
         startDate: startDate !== undefined ? startDate : oldTask.startDate,
@@ -351,7 +385,7 @@ export const updateTask = async (req, res) => {
       const newStatus = updatedTask.status?.name || 'None';
       changes.push(`status from '${oldStatus}' to '${newStatus}'`);
     }
-    
+
     if (oldTask.assignedTo?._id?.toString() !== updatedTask.assignedTo?._id?.toString()) {
       const oldAsg = oldTask.assignedTo?.name || 'Unassigned';
       const newAsg = updatedTask.assignedTo?.name || 'Unassigned';
@@ -386,6 +420,32 @@ export const updateTask = async (req, res) => {
 
     const io = req.app.get('io');
     if (io) io.emit('taskUpdated', updatedTask);
+
+    // ⭐ MENTION EMAILS: Send to new mentions only
+    const oldMentions = (oldTask.mentionedUsers || []).map(id => id.toString());
+    const currentMentions = (updatedTask.mentionedUsers || []).map(id => id.toString());
+    const newMentions = currentMentions.filter(id => !oldMentions.includes(id));
+
+    if (newMentions.length > 0) {
+      const newlyMentioned = await User.find({ _id: { $in: newMentions } });
+      const imagePaths = req.files?.images ? req.files.images.map(f => f.path) : [];
+      const videoPaths = req.files?.videos ? req.files.videos.map(f => f.path) : [];
+
+      newlyMentioned.forEach(mUser => {
+        if (mUser.email && mUser._id.toString() !== updatedTask.assignedTo?._id?.toString()) {
+          sendTaskEmail(
+            mUser.email,
+            mUser.name,
+            updatedTask.title,
+            updatedTask.description,
+            [...imagePaths, ...videoPaths],
+            'mention',
+            taskType
+          );
+        }
+      });
+    }
+
     res.json(updatedTask);
   } catch (error) {
     res.status(500).json({ message: "Update failed" });

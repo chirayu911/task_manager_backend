@@ -13,7 +13,7 @@ const { sendWelcomeEmail, sendEmail } = require('../utils/sendEmail');
 const getFlattenedPermissions = async (roleId, isCompanyOwner = false) => {
   // ⭐ If the user is a Company Owner, they automatically get the wildcard permission
   if (isCompanyOwner) return ['*'];
-  
+
   if (!roleId) return [];
   try {
     const roleObj = await Role.findById(roleId).populate('permissions');
@@ -50,11 +50,11 @@ const loginUser = asyncHandler(async (req, res) => {
     throw new Error('Please provide a username/email and password');
   }
 
-  const user = await User.findOne({ 
+  const user = await User.findOne({
     $or: [
-      { email: loginIdentifier }, 
+      { email: loginIdentifier },
       { username: loginIdentifier }
-    ] 
+    ]
   }).populate('role').select('+password');
 
   if (!user || !(await bcrypt.compare(password, user.password))) {
@@ -87,11 +87,11 @@ const loginUser = asyncHandler(async (req, res) => {
 
 // ================= LOGOUT =================
 const logoutUser = asyncHandler(async (req, res) => {
-  res.cookie('jwt', '', { 
-    httpOnly: true, 
-    secure: true, 
-    sameSite: 'none', 
-    expires: new Date(0) 
+  res.cookie('jwt', '', {
+    httpOnly: true,
+    secure: true,
+    sameSite: 'none',
+    expires: new Date(0)
   });
   res.json({ message: 'Logged out' });
 });
@@ -101,7 +101,7 @@ const getMe = asyncHandler(async (req, res) => {
   // ⭐ FIX: Added .populate('company') to ensure the full object is returned
   const user = await User.findById(req.user.id || req.user._id)
     .populate('role')
-    .populate('company') 
+    .populate('company')
     .select('-password');
 
   if (!user) {
@@ -137,9 +137,9 @@ const getUsers = asyncHandler(async (req, res) => {
 // ================= GET USER BY ID (Scoped to Company) =================
 const getUserById = asyncHandler(async (req, res) => {
   // ⭐ Secure check: Target user must belong to the requester's company
-  const user = await User.findOne({ 
-    _id: req.params.id, 
-    company: req.user.company 
+  const user = await User.findOne({
+    _id: req.params.id,
+    company: req.user.company
   })
     .populate('role', 'name')
     .select('-password');
@@ -190,18 +190,18 @@ const registerUser = asyncHandler(async (req, res) => {
 
   if (user) {
     const io = req.app.get("io");
-    if (io) io.emit("staffChanged"); 
+    if (io) io.emit("staffChanged");
 
     try {
       if (typeof sendWelcomeEmail === 'function') {
-       sendWelcomeEmail(user.email, user.name, user.username, plainPassword);
+        sendWelcomeEmail(user.email, user.name, user.username, plainPassword);
       }
     } catch (emailErr) {
       console.error("Email failed:", emailErr.message);
     }
 
-    res.status(201).json({ 
-      success: true, 
+    res.status(201).json({
+      success: true,
       message: "User created successfully.",
       user: { _id: user._id, name: user.name }
     });
@@ -214,9 +214,9 @@ const registerUser = asyncHandler(async (req, res) => {
 // ================= UPDATE USER (Scoped to Company) =================
 const updateUser = asyncHandler(async (req, res) => {
   // ⭐ Ensure the user being updated belongs to the requester's company
-  const user = await User.findOne({ 
-    _id: req.params.id, 
-    company: req.user.company 
+  const user = await User.findOne({
+    _id: req.params.id,
+    company: req.user.company
   });
 
   if (!user) {
@@ -225,7 +225,7 @@ const updateUser = asyncHandler(async (req, res) => {
   }
 
   const oldRoleId = user.role?.toString();
-  
+
   user.name = req.body.name || user.name;
   user.email = req.body.email || user.email;
   user.username = req.body.username || user.username;
@@ -260,7 +260,7 @@ const updateUser = asyncHandler(async (req, res) => {
 // ================= UPDATE OWN PROFILE =================
 const updateProfile = asyncHandler(async (req, res) => {
   const updateData = {};
-  
+
   if (req.body.name) updateData.name = req.body.name;
   if (req.body.username) updateData.username = req.body.username;
   if (req.file) updateData.profilePicture = req.file.path.replace(/\\/g, "/");
@@ -289,9 +289,9 @@ const updateProfile = asyncHandler(async (req, res) => {
 // ================= DELETE USER (Scoped to Company) =================
 const deleteUser = asyncHandler(async (req, res) => {
   // ⭐ Verify target user is in the same company
-  const user = await User.findOne({ 
-    _id: req.params.id, 
-    company: req.user.company 
+  const user = await User.findOne({
+    _id: req.params.id,
+    company: req.user.company
   });
 
   if (!user) {
@@ -311,7 +311,7 @@ const deleteUser = asyncHandler(async (req, res) => {
   const io = req.app.get("io");
   if (io) {
     io.emit("staffChanged");
-    io.to(userId).emit("forceLogout"); 
+    io.to(userId).emit("forceLogout");
   }
 
   res.json({ message: 'User removed successfully' });
@@ -393,11 +393,11 @@ const getAllStaff = asyncHandler(async (req, res) => {
 
   try {
     const activeCompanyId = req.headers['x-active-company-id'];
-    
+
     // ⭐ SAFETY CHECK 2: Handle potential undefined role safely
     const userRole = req.user.role;
     const roleName = typeof userRole === 'object' ? userRole?.name : userRole;
-    
+
     // Check if system admin or superadmin
     const isSystemAdmin = roleName === 'admin' || roleName === 'superadmin' || req.user.permissions?.includes('*');
 
@@ -413,7 +413,7 @@ const getAllStaff = asyncHandler(async (req, res) => {
     }
 
     const users = await User.find(query)
-      .select('-password') 
+      .select('-password')
       .populate({ path: 'company', select: 'companyName' })
       .populate('role', 'name')
       .sort({ createdAt: -1 })
@@ -426,17 +426,17 @@ const getAllStaff = asyncHandler(async (req, res) => {
   }
 });
 
-module.exports = { 
-  loginUser, 
-  logoutUser, 
-  getMe, 
-  getUsers, 
-  getUserById, 
-  registerUser, 
-  updateUser, 
+module.exports = {
+  loginUser,
+  logoutUser,
+  getMe,
+  getUsers,
+  getUserById,
+  registerUser,
+  updateUser,
   updateProfile,
   deleteUser,
-  forgotPassword, 
+  forgotPassword,
   resetPassword,
-  getAllStaff   
+  getAllStaff
 };
