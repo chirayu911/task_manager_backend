@@ -1,4 +1,5 @@
 const express = require("express");
+const logger = require("./utils/logger");
 const cors = require("cors");
 const dotenv = require("dotenv");
 const cookieParser = require("cookie-parser");
@@ -40,7 +41,7 @@ app.use(cors({
     if (!origin || allowedOrigins.includes(origin) || (origin && origin.endsWith('.devtunnels.ms'))) {
       callback(null, true);
     } else {
-      console.error('CORS blocked for origin:', origin);
+      logger.error(`CORS blocked for origin: ${origin}`);
       callback(null, false); // Best practice: Don't throw error, just reject origin
     }
   },
@@ -139,9 +140,9 @@ app.use('/api/dashboard', require('./routes/dashboardRoutes'));
 
 // ---------------- CRON JOBS ----------------
 cron.schedule('59 23 * * *', () => {
-  console.log('[CRON] Running daily attendance job (23:59)...');
+  logger.info('[CRON] Running daily attendance job (23:59)...');
   markAbsent();
 });
 
 const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+server.listen(PORT, () => logger.info(`🚀 Server running on port ${PORT}`));
