@@ -43,6 +43,9 @@ router.delete('/requests/:requestId', protect, documentController.declineAccess)
 // Get all documents for a project
 router.get('/', protect, documentController.getDocumentsByProject);
 
+// Get all documents the user belongs to across all projects
+router.get('/user-docs', protect, documentController.getUserDocuments);
+
 // Handles physical file uploads via Multer
 router.post('/', protect, upload.single('documentFile'), documentController.createDocument);
 

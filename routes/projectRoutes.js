@@ -8,7 +8,8 @@ const {
   createProject, 
   updateProject, 
   deleteProject,
-  getProjectTeam // ⭐ This handles fetching the users for your search bar
+  getProjectTeam, // ⭐ This handles fetching the users for your search bar
+  getCommonProjects
 } = require('../controllers/projectController');
 
 const { protect } = require('../middleware/authMiddleware');
@@ -37,6 +38,7 @@ router.route('/').get(protect, getProjects).post(protect, createProject);
 // The frontend uses this to populate the "bubble" search and access table
 router.get('/:id/users', protect, getProjectTeam); 
 router.get('/:id/team', protect, getProjectTeam); // Added /team alias for compatibility
+router.get('/common/:userId', protect, getCommonProjects);
 
 // ==========================================
 // 3. ID-Specific Routes

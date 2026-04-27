@@ -108,8 +108,67 @@ const sendEmail = async (options) => {
   }
 };
 
+const sendLeaveRequestEmail = async (ownerEmail, employeeName, date, reason, frontendUrl) => {
+  try {
+    const transporter = createTransporter();
+    const mailOptions = {
+      from: `"Task Management System" <${process.env.EMAIL_USER}>`,
+      to: ownerEmail,
+      subject: `Leave Request from ${employeeName}`,
+      html: `
+        <div style="font-family: 'Segoe UI', Arial, sans-serif; padding: 40px; background-color: #f3f4f6;">
+          <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; padding: 30px; border-radius: 16px; border-top: 4px solid #f59e0b; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
+            <h2 style="color: #111827; margin-top: 0;">New Leave Request</h2>
+            <p style="color: #374151; font-size: 16px;">
+              <strong>${employeeName}</strong> has requested leave on <strong>${date}</strong>.
+            </p>
+            <div style="background-color: #f9fafb; padding: 15px; border-radius: 8px; margin: 20px 0;">
+              <strong>Reason:</strong><br/>
+              ${reason}
+            </div>
+            <a href="${frontendUrl}/attendance" 
+               style="display: inline-block; margin-top: 20px; padding: 12px 24px; background-color: #2563eb; color: #ffffff; text-decoration: none; border-radius: 8px; font-weight: bold;">
+              Review Request
+            </a>
+          </div>
+        </div>
+      `,
+    };
+    await transporter.sendMail(mailOptions);
+    console.log('✅ Leave request email sent safely');
+  } catch (error) {
+    console.error('❌ Leave request email failed', error);
+  }
+};
+
+const sendLeaveStatusEmail = async (employeeEmail, status, date) => {
+  try {
+    const transporter = createTransporter();
+    const color = status === 'approved' ? '#10b981' : '#ef4444';
+    const mailOptions = {
+      from: `"Task Management System" <${process.env.EMAIL_USER}>`,
+      to: employeeEmail,
+      subject: `Leave Request ${status.toUpperCase()} for ${date}`,
+      html: `
+        <div style="font-family: 'Segoe UI', Arial, sans-serif; padding: 40px; background-color: #f3f4f6;">
+          <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; padding: 30px; border-radius: 16px; border-top: 4px solid ${color};">
+            <h2 style="color: #111827; margin-top: 0;">Your leave request for ${date} has been <strong>${status}</strong>.</h2>
+            <p style="color: #374151;">Please check your dashboard or reach out to HR for more details mapping to your request.</p>
+          </div>
+        </div>
+      `,
+    };
+    await transporter.sendMail(mailOptions);
+    console.log('✅ Leave status email sent safely');
+  } catch (error) {
+    console.error('❌ Leave status email failed', error);
+  }
+};
+
 // Export both functions
 module.exports = {
   sendWelcomeEmail,
-  sendEmail
+  sendEmail,
+  sendLeaveRequestEmail,
+  sendLeaveStatusEmail
 };

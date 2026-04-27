@@ -6,10 +6,10 @@ const Company = require('../models/Company'); // ⭐ Required for assigning plan
 exports.createSubscription = async (req, res) => {
   try {
     // ⭐ Added new usage limit fields: maxStaff, maxTeamMembersPerProject, hasBulkUpload
-    const { 
-      name, price, cycle, status, features, 
-      maxProjects, maxTasks, maxDocuments, 
-      maxStaff, maxTeamMembersPerProject, hasBulkUpload 
+    const {
+      name, price, cycle, status, features,
+      maxProjects, maxTasks, maxDocuments,
+      maxStaff, maxTeamMembersPerProject, hasBulkUpload
     } = req.body;
 
     // Backend Validation Check
@@ -56,11 +56,11 @@ exports.getAllSubscriptions = async (req, res) => {
 exports.getSubscriptionById = async (req, res) => {
   try {
     const subscription = await Subscription.findById(req.params.id);
-    
+
     if (!subscription) {
       return res.status(404).json({ message: "Subscription plan not found." });
     }
-    
+
     res.status(200).json(subscription);
   } catch (error) {
     res.status(500).json({ message: "Error fetching subscription plan details." });
@@ -72,23 +72,23 @@ exports.getSubscriptionById = async (req, res) => {
 exports.updateSubscription = async (req, res) => {
   try {
     // ⭐ Added new usage limit fields to the destructuring
-    const { 
-      name, price, cycle, status, features, 
+    const {
+      name, price, cycle, status, features,
       maxProjects, maxTasks, maxDocuments,
       maxStaff, maxTeamMembersPerProject, hasBulkUpload
     } = req.body;
 
     if (!features || features.length === 0) {
-        return res.status(400).json({ message: "At least one feature is required." });
+      return res.status(400).json({ message: "At least one feature is required." });
     }
 
     const updatedSubscription = await Subscription.findByIdAndUpdate(
       req.params.id,
-      { 
-        name, price, cycle, status, features, 
+      {
+        name, price, cycle, status, features,
         maxProjects, maxTasks, maxDocuments,
         maxStaff, maxTeamMembersPerProject, hasBulkUpload // ⭐ NEW limits updated here
-      }, 
+      },
       { new: true, runValidators: true }
     );
 
@@ -107,11 +107,11 @@ exports.updateSubscription = async (req, res) => {
 exports.deleteSubscription = async (req, res) => {
   try {
     const deletedSubscription = await Subscription.findByIdAndDelete(req.params.id);
-    
+
     if (!deletedSubscription) {
       return res.status(404).json({ message: "Subscription plan not found." });
     }
-    
+
     res.status(200).json({ message: "Subscription plan deleted successfully." });
   } catch (error) {
     res.status(500).json({ message: "Failed to delete subscription plan." });
@@ -147,10 +147,10 @@ exports.selectSubscription = async (req, res) => {
 
     const updatedCompany = await Company.findByIdAndUpdate(
       req.user.company,
-      { 
-        subscriptionPlan: planId, 
+      {
+        subscriptionPlan: planId,
         subscriptionStatus: 'active',
-        subscriptionExpiry: new Date(new Date().setMonth(new Date().getMonth() + 1)) 
+        subscriptionExpiry: new Date(new Date().setMonth(new Date().getMonth() + 1))
       },
       { new: true }
     );

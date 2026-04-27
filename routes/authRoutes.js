@@ -14,10 +14,19 @@ const {
 } = require('../controllers/authController'); 
 
 const { protect } = require('../middleware/authMiddleware');
+const rateLimit = require('express-rate-limit');
+
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, 
+  max: 10, 
+  message: { message: 'Too many login attempts from this IP, please try again after 15 minutes' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 // ================= AUTH & SESSION =================
 // Note: loginUser now sets the 'jwt' cookie and populates company info
-router.post('/login', loginUser);   
+router.post('/login', loginLimiter, loginUser);   
 router.post('/logout', logoutUser); 
 router.get('/me', protect, getMe); 
  

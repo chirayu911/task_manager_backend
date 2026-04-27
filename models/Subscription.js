@@ -18,32 +18,32 @@ const subscriptionSchema = new mongoose.Schema({
     default: 'monthly'
   },
   status: {
-    type: Number, 
+    type: Number,
     enum: [1, 2], // 1 = Active, 2 = Inactive
     default: 1
   },
   features: {
     type: [String],
     validate: {
-      validator: function(v) {
+      validator: function (v) {
         return v && v.length > 0;
       },
       message: 'At least one feature is required'
     }
   },
-  
+
   // Usage Limits for the Subscription System
   // (Note: Use -1 to represent 'unlimited' in your application logic)
-  
+
   maxProjects: {
     type: Number,
     required: [true, 'Max Projects limit is required'],
-    default: 1 
+    default: 1
   },
   maxTasks: {
     type: Number,
     required: [true, 'Max Tasks limit is required'],
-    default: 50 
+    default: 50
   },
   maxDocuments: {
     type: Number,
@@ -70,7 +70,7 @@ const subscriptionSchema = new mongoose.Schema({
     required: [true, 'Bulk Upload feature status is required'],
     default: false // Toggle for Excel/CSV task/staff upload feature
   }
-  
+
 }, { timestamps: true });
 
 module.exports = mongoose.model('Subscription', subscriptionSchema);

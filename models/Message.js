@@ -13,7 +13,16 @@ const messageSchema = new mongoose.Schema({
   },
   content: {
     type: String,
-    required: true
+    required: false
+  },
+  messageType: {
+    type: String,
+    enum: ['text', 'document'],
+    default: 'text'
+  },
+  document: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Document'
   },
   readBy: [{
     type: mongoose.Schema.Types.ObjectId,

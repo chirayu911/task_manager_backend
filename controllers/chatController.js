@@ -3,6 +3,7 @@ const Conversation = require('../models/Conversation');
 const Message = require('../models/Message');
 const User = require('../models/User');
 const Project = require('../models/Project');
+const Document = require('../models/Document');
 const { encryptMessage, decryptMessage } = require('../utils/encryption');
 
 // @desc    Get all conversations for the user
@@ -234,11 +235,14 @@ const getMessages = asyncHandler(async (req, res) => {
 
   const messages = await Message.find({ conversationId })
     .populate('sender', 'name profilePicture')
+    .populate('document', 'title fileUrl fileType originalName')
     .sort({ createdAt: 1 });
 
   const decryptedMessages = messages.map(msg => {
     let obj = msg.toObject();
-    obj.content = decryptMessage(obj.content);
+    if (obj.content) {
+      obj.content = decryptMessage(obj.content);
+    }
     return obj;
   });
 
@@ -262,28 +266,51 @@ const markMessagesAsRead = asyncHandler(async (req, res) => {
 // @desc    Send a message via HTTP (fallback)
 // @route   POST /api/chat/messages
 const sendMessage = asyncHandler(async (req, res) => {
-  const { conversationId, content } = req.body;
+  const { conversationId, content, documentId, messageType } = req.body;
   const senderId = req.user._id;
 
-  if (!content) return res.status(400).json({ message: "Message content cannot be empty" });
+  if (!content && !documentId) {
+    return res.status(400).json({ message: "Message content or document is required" });
+  }
 
-  const encryptedContent = encryptMessage(content);
+  const encryptedContent = content ? encryptMessage(content) : "";
 
   const message = await Message.create({
     conversationId,
     sender: senderId,
     content: encryptedContent,
+    document: documentId || null,
+    messageType: messageType || (documentId ? 'document' : 'text'),
     readBy: [senderId]
   });
+
+  // If a document is shared, grant read-only access to other participants
+  if (documentId) {
+    const conversation = await Conversation.findById(conversationId);
+    if (conversation) {
+      const otherParticipants = conversation.participants.filter(
+        p => p.toString() !== senderId.toString()
+      );
+      
+      await Document.findByIdAndUpdate(documentId, {
+        $addToSet: { readOnlyUsers: { $each: otherParticipants } }
+      });
+    }
+  }
 
   await Conversation.findByIdAndUpdate(conversationId, {
     latestMessage: message._id,
     updatedAt: new Date()
   });
 
-  const fullMessage = await Message.findById(message._id).populate('sender', 'name profilePicture');
+  const fullMessage = await Message.findById(message._id)
+    .populate('sender', 'name profilePicture')
+    .populate('document', 'title fileUrl fileType originalName');
+    
   let cleanMessage = fullMessage.toObject();
-  cleanMessage.content = decryptMessage(cleanMessage.content);
+  if (cleanMessage.content) {
+    cleanMessage.content = decryptMessage(cleanMessage.content);
+  }
 
   const io = req.app.get("io");
   if (io) {

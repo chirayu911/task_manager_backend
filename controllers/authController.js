@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const asyncHandler = require('express-async-handler');
 const User = require('../models/User');
 const Company = require('../models/Company'); 
+const Attendance = require('../models/Attendance');
 const { sendEmail } = require('../utils/sendEmail');
 const logAudit = require('../utils/auditLogger');
 
@@ -85,6 +86,45 @@ const loginUser = asyncHandler(async (req, res) => {
       resourceType: 'Auth',
       description: `User ${user.email} logged in.`,
     });
+
+    // Record attendance
+    if (user.company) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      let statusToSet = 'present';
+      if (user.company.workingHours) {
+        const now = new Date();
+        const currentHH = String(now.getHours()).padStart(2, '0');
+        const currentMM = String(now.getMinutes()).padStart(2, '0');
+        const currentStr = `${currentHH}:${currentMM}`;
+        
+        const { start, end } = user.company.workingHours;
+        
+        if (start <= end) {
+          if (currentStr < start || currentStr > end) {
+            statusToSet = 'absent';
+          }
+        } else {
+          // Night shift cross-midnight logic (e.g. 22:00 to 06:00)
+          if (currentStr < start && currentStr > end) {
+            statusToSet = 'absent';
+          }
+        }
+      }
+
+      await Attendance.findOneAndUpdate(
+        { user: user._id, date: today },
+        { 
+          $setOnInsert: { 
+            company: user.company,
+            status: statusToSet,
+            loginTime: new Date()
+          } 
+        },
+        { upsert: true, new: true }
+      );
+    }
 
     res.json({
       _id: user.id,

@@ -296,6 +296,25 @@ const getProjectTeam = asyncHandler(async (req, res) => {
   res.status(200).json(project.assignedUsers);
 });
 
+/**
+ * @desc    Get common projects between two users
+ * @route   GET /api/projects/common/:userId
+ */
+const getCommonProjects = asyncHandler(async (req, res) => {
+  const currentUserId = req.user._id;
+  const otherUserId = req.params.userId;
+
+  const projects = await Project.find({
+    company: req.user.company,
+    $and: [
+      { $or: [{ assignedUsers: currentUserId }, { createdBy: currentUserId }] },
+      { $or: [{ assignedUsers: otherUserId }, { createdBy: otherUserId }] }
+    ]
+  }).select('title _id');
+
+  res.status(200).json(projects);
+});
+
 module.exports = {
   getProjects,
   getProjectById,
@@ -303,4 +322,5 @@ module.exports = {
   updateProject,
   deleteProject,
   getProjectTeam,
+  getCommonProjects,
 };

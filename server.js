@@ -11,6 +11,8 @@ const session = require('express-session');
 const subscriptionRoutes = require('./routes/subscriptionRoutes');
 const companyRoutes = require('./routes/companyRoutes');
 const activityRoutes = require('./routes/activityRoutes');
+const cron = require('node-cron');
+const { markAbsent } = require('./controllers/attendanceController');
 
 dotenv.config();
 connectDB();
@@ -34,10 +36,12 @@ const allowedOrigins = [
 // ---------------- MIDDLEWARE ----------------
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) {
+    // Allow any devtunnels.ms origin explicitly to avoid hardcoded domain mismatches
+    if (!origin || allowedOrigins.includes(origin) || (origin && origin.endsWith('.devtunnels.ms'))) {
       callback(null, true);
     } else {
-      callback(new Error("Not allowed by CORS"));
+      console.error('CORS blocked for origin:', origin);
+      callback(null, false); // Best practice: Don't throw error, just reject origin
     }
   },
   credentials: true, // ⭐ Required to share cookies across domains
@@ -130,6 +134,14 @@ app.use('/api/website-settings', require('./routes/websiteSettingRoutes'));
 app.use('/api/admin', require('./routes/adminRoutes'));
 app.use('/api/chat', require('./routes/chatRoutes'));
 app.use('/api/reports', require('./routes/reportRoutes'));
+app.use('/api/attendance', require('./routes/attendanceRoutes'));
+app.use('/api/dashboard', require('./routes/dashboardRoutes'));
+
+// ---------------- CRON JOBS ----------------
+cron.schedule('59 23 * * *', () => {
+  console.log('[CRON] Running daily attendance job (23:59)...');
+  markAbsent();
+});
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));

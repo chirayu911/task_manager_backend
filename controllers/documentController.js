@@ -154,6 +154,35 @@ exports.getDocumentsByProject = async (req, res) => {
 };
 
 // ==========================================
+// 2.1 Get All Documents for a User across all their projects
+// ==========================================
+exports.getUserDocuments = async (req, res) => {
+  try {
+    const userId = req.user?._id || req.user?.id;
+    if (!userId) return res.status(401).json({ message: "User authentication required." });
+
+    // Find all projects the user is in
+    const Project = require('../models/Project');
+    const userProjects = await Project.find({
+      $or: [{ assignedUsers: userId }, { createdBy: userId }]
+    }).select('_id');
+
+    const projectIds = userProjects.map(p => p._id);
+
+    // Find all documents for these projects
+    const documents = await Document.find({ project: { $in: projectIds } })
+      .populate('uploadedBy', 'name email')
+      .populate('project', 'title')
+      .sort({ createdAt: -1 });
+
+    res.status(200).json(documents);
+  } catch (error) {
+    console.error("🔴 GET USER DOCS ERROR:", error);
+    res.status(500).json({ message: "Failed to retrieve user documents." });
+  }
+};
+
+// ==========================================
 // 3. Request Access
 // ==========================================
 exports.requestAccess = async (req, res) => {
