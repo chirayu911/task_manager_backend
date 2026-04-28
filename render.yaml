@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: task-manager-backend
+    env: node
+    # Since this file is now in the backend repository directly, we don't need a rootDir!
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: MONGO_URI
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: PORT
+        value: 5000
