@@ -28,11 +28,7 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 const documentRoutes = require('./routes/documentRoutes');
 
 // ⭐ Update these with your ACTUAL Dev Tunnel URLs
-const allowedOrigins = [
-  "https://fm8bp5cj-3000.inc1.devtunnels.ms", // Your Frontend Tunnel
-  "http://localhost:3000",
-  "https://task-manager-frontend-9n66-gxda6leb5-chirayu911s-projects.vercel.app/"
-];
+const allowedOrigins = [process.env.FRONTEND_URL, "http://localhost:3000"];
 
 // ---------------- MIDDLEWARE ----------------
 app.use(cors({
