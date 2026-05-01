@@ -1,15 +1,15 @@
-import mongoose from 'mongoose';
-import Task from '../models/Task.js';
-import User from '../models/User.js';
-import Project from '../models/Project.js';
-import TaskStatus from '../models/TaskStatus.js';
-import Company from '../models/Company.js';
-import sendTaskEmail from '../utils/sendAssignEmail.js';
-import logActivity from '../utils/logActivity.js';
-import logAudit from '../utils/auditLogger.js';
+const mongoose = require('mongoose');
+const Task = require('../models/Task.js');
+const User = require('../models/User.js');
+const Project = require('../models/Project.js');
+const TaskStatus = require('../models/TaskStatus.js');
+const Company = require('../models/Company.js');
+const sendTaskEmail = require('../utils/sendAssignEmail.js');
+const logActivity = require('../utils/logActivity.js');
+const logAudit = require('../utils/auditLogger.js');
 
 // @desc    Get all tasks (Scoped to Company)
-export const getTasks = async (req, res) => {
+exports.getTasks = async (req, res) => {
   try {
     const { project, itemType, page = 1, limit = 10 } = req.query;
 
@@ -84,7 +84,7 @@ export const getTasks = async (req, res) => {
 };
 
 // @desc    Get single task by ID
-export const getTaskById = async (req, res) => {
+exports.getTaskById = async (req, res) => {
   try {
     const { id } = req.params;
     const { projectId } = req.query; // Optional: Pass project ID from frontend for stricter security
@@ -125,7 +125,7 @@ export const getTaskById = async (req, res) => {
 };
 
 // @desc    Create Task or Issue (Including Timeline & Hours)
-export const createTask = async (req, res) => {
+exports.createTask = async (req, res) => {
   try {
     const {
       title, description, status, assignedTo, project, itemType,
@@ -241,7 +241,7 @@ export const createTask = async (req, res) => {
 };
 
 // @desc    Bulk Create Tasks (With Timeline mapping)
-export const bulkCreateTasks = async (req, res) => {
+exports.bulkCreateTasks = async (req, res) => {
   try {
     const { items, project, type } = req.body;
     const projectObjectId = new mongoose.Types.ObjectId(project);
@@ -345,7 +345,7 @@ export const bulkCreateTasks = async (req, res) => {
 };
 
 // @desc    Update Task or Issue (Including Timeline & Hours)
-export const updateTask = async (req, res) => {
+exports.updateTask = async (req, res) => {
   try {
     const {
       title, description, status, assignedTo, itemType,
@@ -453,7 +453,7 @@ export const updateTask = async (req, res) => {
 };
 
 // @desc    Delete Task
-export const deleteTask = async (req, res) => {
+exports.deleteTask = async (req, res) => {
   try {
     const task = await Task.findOneAndDelete({
       _id: req.params.id,
