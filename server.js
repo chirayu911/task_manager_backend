@@ -33,8 +33,8 @@ const allowedOrigins = [process.env.FRONTEND_URL, "http://localhost:3000"];
 // ---------------- MIDDLEWARE ----------------
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow any devtunnels.ms origin explicitly to avoid hardcoded domain mismatches
-    if (!origin || allowedOrigins.includes(origin) || (origin && origin.endsWith('.devtunnels.ms'))) {
+    // Allow any devtunnels.ms or vercel.app origin explicitly to avoid hardcoded domain mismatches
+    if (!origin || allowedOrigins.includes(origin) || (origin && origin.endsWith('.devtunnels.ms')) || (origin && origin.endsWith('.vercel.app'))) {
       callback(null, true);
     } else {
       logger.error(`CORS blocked for origin: ${origin}`);
