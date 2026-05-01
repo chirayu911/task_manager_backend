@@ -62,7 +62,7 @@ const loginUser = asyncHandler(async (req, res) => {
     throw new Error('Invalid username or password');
   }
 
-  const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '30d' });
+  const token = jwt.sign({ id: user._id }, import.meta.env.JWT_SECRET, { expiresIn: '30d' });
   const permissions = await getFlattenedPermissions(user.role?._id, user.isCompanyOwner);
 
   res.cookie('jwt', token, {
@@ -328,7 +328,7 @@ const forgotPassword = asyncHandler(async (req, res) => {
   const resetToken = user.getResetPasswordToken();
   await user.save({ validateBeforeSave: false });
 
-  const baseUrl = (process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '');
+  const baseUrl = (import.meta.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '');
   const resetUrl = `${baseUrl}/reset-password/${resetToken}`;
 
   const message = `

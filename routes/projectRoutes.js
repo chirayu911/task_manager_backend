@@ -2,11 +2,11 @@ const express = require('express');
 const router = express.Router();
 
 // ⭐ Imports from your project controller
-const { 
-  getProjects, 
-  getProjectById, 
-  createProject, 
-  updateProject, 
+const {
+  getProjects,
+  getProjectById,
+  createProject,
+  updateProject,
   deleteProject,
   getProjectTeam, // ⭐ This handles fetching the users for your search bar
   getCommonProjects
@@ -20,13 +20,13 @@ const checkPermission = require('../middleware/checkPermission');
 // ==========================================
 router.route('/')
   .get(
-    protect, 
-    checkPermission('projects_read'), 
+    protect,
+    checkPermission('projects_read'),
     getProjects
   )
   .post(
-    protect, 
-    checkPermission('projects_create'), 
+    protect,
+    checkPermission('projects_create'),
     createProject
   );
 router.route('/').get(protect, getProjects).post(protect, createProject);
@@ -36,7 +36,7 @@ router.route('/').get(protect, getProjects).post(protect, createProject);
 // ==========================================
 // ⭐ This must be protected so only logged-in users can see team members
 // The frontend uses this to populate the "bubble" search and access table
-router.get('/:id/users', protect, getProjectTeam); 
+router.get('/:id/users', protect, getProjectTeam);
 router.get('/:id/team', protect, getProjectTeam); // Added /team alias for compatibility
 router.get('/common/:userId', protect, getCommonProjects);
 
@@ -45,18 +45,18 @@ router.get('/common/:userId', protect, getCommonProjects);
 // ==========================================
 router.route('/:id')
   .get(
-    protect, 
-    checkPermission('projects_read'), 
+    protect,
+    checkPermission('projects_read'),
     getProjectById
   )
   .put(
-    protect, 
-    checkPermission('projects_update'), 
+    protect,
+    checkPermission('projects_update'),
     updateProject
   )
   .delete(
-    protect, 
-    checkPermission('projects_delete'), 
+    protect,
+    checkPermission('projects_delete'),
     deleteProject
   );
 

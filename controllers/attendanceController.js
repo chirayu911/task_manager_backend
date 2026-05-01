@@ -154,7 +154,7 @@ const markAbsent = async () => {
       // Upsert record: if exists (e.g. present or leave), it won't change status to absent because we only do insert,
       // or we can explicitly look for missing and insert.
       const existingRecord = await Attendance.findOne({ user: user._id, date: today });
-      
+
       if (!existingRecord) {
         await Attendance.create({
           user: user._id,
@@ -177,9 +177,9 @@ const markAbsent = async () => {
  */
 const requestLeave = asyncHandler(async (req, res) => {
   const { date, reason } = req.body;
-  
+
   const parsedDate = new Date(date);
-  parsedDate.setHours(0,0,0,0);
+  parsedDate.setHours(0, 0, 0, 0);
 
   const existing = await LeaveRequest.findOne({ user: req.user._id, date: parsedDate });
   if (existing) {
@@ -197,7 +197,7 @@ const requestLeave = asyncHandler(async (req, res) => {
 
   const owner = await User.findOne({ company: req.user.company, isCompanyOwner: true });
   if (owner && owner.email) {
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const frontendUrl = import.meta.env.FRONTEND_URL || 'http://localhost:3000';
     const formattedDate = parsedDate.toLocaleDateString();
     await sendLeaveRequestEmail(owner.email, req.user.name, formattedDate, reason, frontendUrl);
   }
@@ -223,7 +223,7 @@ const getPendingLeaves = asyncHandler(async (req, res) => {
  * @access  Private
  */
 const updateLeaveStatus = asyncHandler(async (req, res) => {
-  const { status } = req.body; 
+  const { status } = req.body;
   const leave = await LeaveRequest.findById(req.params.id).populate('user');
 
   if (!leave) {
@@ -237,11 +237,11 @@ const updateLeaveStatus = asyncHandler(async (req, res) => {
   if (status === 'approved') {
     await Attendance.findOneAndUpdate(
       { user: leave.user._id, date: leave.date },
-      { 
-        $set: { 
+      {
+        $set: {
           company: leave.company,
           status: 'leave'
-        } 
+        }
       },
       { upsert: true, new: true }
     );
@@ -261,11 +261,11 @@ const updateLeaveStatus = asyncHandler(async (req, res) => {
  * @access  Private (Owner/Admin)
  */
 const getAttendanceByUser = asyncHandler(async (req, res) => {
-  const attendance = await Attendance.find({ 
+  const attendance = await Attendance.find({
     user: req.params.id,
-    company: req.user.company 
+    company: req.user.company
   }).sort({ date: 0 });
-  
+
   res.status(200).json(attendance);
 });
 

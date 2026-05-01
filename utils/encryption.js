@@ -2,17 +2,17 @@ const crypto = require('crypto');
 
 // The ENCRYPTION_KEY must be exactly 32 bytes (256 bits) for AES-256-CBC.
 // Fallback key is provided for dev/testing, but it should be strongly overridden in production.
-const SECRET_KEY = process.env.ENCRYPTION_KEY || 'ab12cd34ef56gh78ij90kl12mn34op56'; // 32 characters
+const SECRET_KEY = import.meta.env.ENCRYPTION_KEY || 'ab12cd34ef56gh78ij90kl12mn34op56'; // 32 characters
 const ALGORITHM = 'aes-256-cbc';
 
 const encryptMessage = (text) => {
   if (!text) return text;
-  
+
   // Create a random Initialization Vector (IV) for each message
   const iv = crypto.randomBytes(16);
   // Create cipher using the key and IV
   const cipher = crypto.createCipheriv(ALGORITHM, Buffer.from(SECRET_KEY), iv);
-  
+
   let encrypted = cipher.update(text, 'utf-8', 'hex');
   encrypted += cipher.final('hex');
 

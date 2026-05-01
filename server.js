@@ -6,6 +6,8 @@ const cookieParser = require("cookie-parser");
 const connectDB = require("./config/db");
 const http = require("http");
 const { Server } = require("socket.io");
+const helmet = require("helmet");
+const mongoSanitize = require("express-mongo-sanitize");
 const taskStatusRoutes = require('./routes/taskStatusRoutes');
 const path = require('path');
 const session = require('express-session');
@@ -28,9 +30,11 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 const documentRoutes = require('./routes/documentRoutes');
 
 // ⭐ Update these with your ACTUAL Dev Tunnel URLs
-const allowedOrigins = [process.env.FRONTEND_URL, "http://localhost:3000"];
+const allowedOrigins = [import.meta.env.FRONTEND_URL, "http://localhost:3000"];
 
 // ---------------- MIDDLEWARE ----------------
+app.use(helmet());
+app.use(mongoSanitize());
 app.use(cors({
   origin: (origin, callback) => {
     // Allow any devtunnels.ms or vercel.app origin explicitly to avoid hardcoded domain mismatches
@@ -52,7 +56,7 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // ⭐ Configured for Dev Tunnels and Cross-PC access
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'f3a9b2c8d1e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0',
+  secret: import.meta.env.SESSION_SECRET || 'f3a9b2c8d1e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0',
   resave: false,
   saveUninitialized: false,
   cookie: {
@@ -66,7 +70,13 @@ app.use(session({
 // ---------------- SOCKET.IO ----------------
 const io = new Server(server, {
   cors: {
-    origin: allowedOrigins,
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin) || (origin && origin.endsWith('.devtunnels.ms')) || (origin && origin.endsWith('.vercel.app'))) {
+        callback(null, true);
+      } else {
+        callback(null, false);
+      }
+    },
     methods: ["GET", "POST"],
     credentials: true,
   },
@@ -95,7 +105,7 @@ io.on("connection", (socket) => {
   socket.on("typing", ({ roomId, user }) => {
     socket.to(roomId).emit("typing", user);
   });
-  
+
   socket.on("stopTyping", ({ roomId, user }) => {
     socket.to(roomId).emit("stopTyping", user);
   });
@@ -140,5 +150,5 @@ cron.schedule('59 23 * * *', () => {
   markAbsent();
 });
 
-const PORT = process.env.PORT || 5000;
+const PORT = import.meta.env.PORT || 5000;
 server.listen(PORT, () => logger.info(`🚀 Server running on port ${PORT}`));

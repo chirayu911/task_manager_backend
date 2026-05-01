@@ -2,7 +2,7 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const asyncHandler = require('express-async-handler');
 const User = require('../models/User');
-const Company = require('../models/Company'); 
+const Company = require('../models/Company');
 const Attendance = require('../models/Attendance');
 const { sendEmail } = require('../utils/sendEmail');
 const logAudit = require('../utils/auditLogger');
@@ -10,8 +10,8 @@ const logAudit = require('../utils/auditLogger');
 
 // Generate JWT Helper
 const generateToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET, {
-    expiresIn: '30d', 
+  return jwt.sign({ id }, import.meta.env.JWT_SECRET, {
+    expiresIn: '30d',
   });
 };
 
@@ -65,8 +65,8 @@ const loginUser = asyncHandler(async (req, res) => {
   const { email, username, password } = req.body;
   const loginIdentifier = username || email;
 
-  const user = await User.findOne({ 
-    $or: [{ email: loginIdentifier }, { username: loginIdentifier }] 
+  const user = await User.findOne({
+    $or: [{ email: loginIdentifier }, { username: loginIdentifier }]
   }).populate('role').populate('company').select('+password');
 
   if (user && (await user.matchPassword(password))) {
@@ -76,7 +76,7 @@ const loginUser = asyncHandler(async (req, res) => {
       httpOnly: true,
       secure: true,
       sameSite: 'none',
-      maxAge: 30 * 24 * 60 * 60 * 1000 
+      maxAge: 30 * 24 * 60 * 60 * 1000
     });
 
     await logAudit(req, {
@@ -98,9 +98,9 @@ const loginUser = asyncHandler(async (req, res) => {
         const currentHH = String(now.getHours()).padStart(2, '0');
         const currentMM = String(now.getMinutes()).padStart(2, '0');
         const currentStr = `${currentHH}:${currentMM}`;
-        
+
         const { start, end } = user.company.workingHours;
-        
+
         if (start <= end) {
           if (currentStr < start || currentStr > end) {
             statusToSet = 'absent';
@@ -115,12 +115,12 @@ const loginUser = asyncHandler(async (req, res) => {
 
       await Attendance.findOneAndUpdate(
         { user: user._id, date: today },
-        { 
-          $setOnInsert: { 
+        {
+          $setOnInsert: {
             company: user.company,
             status: statusToSet,
             loginTime: new Date()
-          } 
+          }
         },
         { upsert: true, new: true }
       );
@@ -165,7 +165,7 @@ const getMe = asyncHandler(async (req, res) => {
     email: user.email,
     profilePicture: user.profilePicture,
     role: user.role?.name || 'No Role',
-    permissions: user.isCompanyOwner ? ['*'] : (user.role?.permissions || []), 
+    permissions: user.isCompanyOwner ? ['*'] : (user.role?.permissions || []),
     preferences: user.preferences,
     isCompanyOwner: user.isCompanyOwner,
     company: user.company
@@ -210,9 +210,9 @@ const updatePreferences = asyncHandler(async (req, res) => {
     throw new Error("User not found");
   }
 
-  res.status(200).json({ 
-    message: "Preferences updated", 
-    preferences: user.preferences 
+  res.status(200).json({
+    message: "Preferences updated",
+    preferences: user.preferences
   });
 });
 /**
@@ -253,10 +253,10 @@ const registerCompany = asyncHandler(async (req, res) => {
   const company = await Company.create({
     companyName,
     ownerName: owner,
-    fullAddress, 
-    companyEmail, 
-    phoneNumber, 
-    nominalCapital, 
+    fullAddress,
+    companyEmail,
+    phoneNumber,
+    nominalCapital,
     industry
   });
 
@@ -267,7 +267,7 @@ const registerCompany = asyncHandler(async (req, res) => {
     user = await User.create({
       name: owner,
       email,
-      username, 
+      username,
       password,
       company: company._id, // Linking here satisfies 'required: true'
       isCompanyOwner: true
@@ -287,9 +287,9 @@ const registerCompany = asyncHandler(async (req, res) => {
   const token = generateToken(user._id);
   res.cookie('jwt', token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: import.meta.env.NODE_ENV === 'production',
     sameSite: 'none',
-    maxAge: 30 * 24 * 60 * 60 * 1000 
+    maxAge: 30 * 24 * 60 * 60 * 1000
   });
 
   await logAudit(req, {
@@ -308,7 +308,7 @@ const registerCompany = asyncHandler(async (req, res) => {
     name: user.name,
     username: user.username,
     email: user.email,
-     preferences: user.preferences,
+    preferences: user.preferences,
     isCompanyOwner: user.isCompanyOwner,
     company: company,
     token // Sending token back just in case your frontend requires it
@@ -325,7 +325,7 @@ const forgotPassword = asyncHandler(async (req, res) => {
   const resetToken = user.getResetPasswordToken();
   await user.save({ validateBeforeSave: false });
 
-  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+  const frontendUrl = import.meta.env.FRONTEND_URL || 'http://localhost:3000';
   const resetUrl = `${frontendUrl}/reset-password/${resetToken}`;
 
   const message = `<h1>Password Reset Request</h1><p>Click below to reset:</p><a href="${resetUrl}">${resetUrl}</a>`;

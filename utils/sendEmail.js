@@ -8,8 +8,8 @@ const createTransporter = () => {
     port: 465,
     secure: true,
     auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS, 
+      user: import.meta.env.EMAIL_USER,
+      pass: import.meta.env.EMAIL_PASS,
     },
   });
 };
@@ -20,7 +20,7 @@ const sendWelcomeEmail = async (email, name, username, password) => {
     const transporter = createTransporter();
 
     const mailOptions = {
-      from: `"Task Management System" <${process.env.EMAIL_USER}>`,
+      from: `"Task Management System" <${import.meta.env.EMAIL_USER}>`,
       to: email,
       subject: '🚀 Welcome aboard! Your login credentials inside',
       html: `
@@ -45,7 +45,7 @@ const sendWelcomeEmail = async (email, name, username, password) => {
             </div>
 
             <div style="margin-top: 30px;">
-              <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}" 
+              <a href="${import.meta.env.FRONTEND_URL || 'http://localhost:3000'}" 
                  style="display: inline-block; padding: 14px 28px; background-color: #2563eb; color: #ffffff; text-decoration: none; border-radius: 10px; font-weight: bold; font-size: 14px; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);">
                 Get Started Now
               </a>
@@ -78,7 +78,7 @@ const sendEmail = async (options) => {
     const transporter = createTransporter();
 
     const mailOptions = {
-      from: `"Task Management System" <${process.env.EMAIL_USER}>`,
+      from: `"Task Management System" <${import.meta.env.EMAIL_USER}>`,
       to: options.to,
       subject: options.subject,
       html: `
@@ -112,7 +112,7 @@ const sendLeaveRequestEmail = async (ownerEmail, employeeName, date, reason, fro
   try {
     const transporter = createTransporter();
     const mailOptions = {
-      from: `"Task Management System" <${process.env.EMAIL_USER}>`,
+      from: `"Task Management System" <${import.meta.env.EMAIL_USER}>`,
       to: ownerEmail,
       subject: `Leave Request from ${employeeName}`,
       html: `
@@ -146,7 +146,7 @@ const sendLeaveStatusEmail = async (employeeEmail, status, date) => {
     const transporter = createTransporter();
     const color = status === 'approved' ? '#10b981' : '#ef4444';
     const mailOptions = {
-      from: `"Task Management System" <${process.env.EMAIL_USER}>`,
+      from: `"Task Management System" <${import.meta.env.EMAIL_USER}>`,
       to: employeeEmail,
       subject: `Leave Request ${status.toUpperCase()} for ${date}`,
       html: `

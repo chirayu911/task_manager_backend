@@ -8,8 +8,8 @@ dotenv.config();
 const seed = async () => {
   try {
     console.log("Connecting to DB...");
-    await mongoose.connect(process.env.MONGO_URI);
-    
+    await mongoose.connect(import.meta.env.MONGO_URI);
+
     // 1. Clear existing data to avoid duplicates
     await Role.deleteMany({});
     await Permission.deleteMany({});
@@ -22,7 +22,7 @@ const seed = async () => {
       { name: 'Delete Tasks', value: 'delete_tasks', status: 'active' },
       { name: 'View Reports', value: 'view_reports', status: 'active' }
     ];
-    
+
     const createdPerms = await Permission.insertMany(perms);
     console.log("✅ Created Permissions");
 
@@ -45,7 +45,7 @@ const seed = async () => {
     ];
 
     await Role.insertMany(roles);
-   
+
     process.exit();
   } catch (err) {
     console.error("❌ Error:", err);

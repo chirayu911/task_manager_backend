@@ -9,7 +9,7 @@ const protect = asyncHandler(async (req, res, next) => {
   if (token) {
     try {
       // 1. Verify token
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      const decoded = jwt.verify(token, import.meta.env.JWT_SECRET);
 
       // 2. Get user from the token (exclude password)
       // Ensure 'role' exists in your User model if using .populate()

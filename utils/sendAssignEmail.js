@@ -18,14 +18,14 @@ const sendTaskEmail = async (recipientEmail, staffName, taskTitle, description =
       port: 465,
       secure: true,
       auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS
+        user: import.meta.env.EMAIL_USER,
+        pass: import.meta.env.EMAIL_PASS
       }
     });
 
     const attachments = files.map(filePath => ({
       filename: path.basename(filePath),
-      path: path.resolve(filePath) 
+      path: path.resolve(filePath)
     }));
 
     // ⭐ Normalization: Ensure 'issue' vs 'Issue' both trigger the red theme
@@ -37,25 +37,25 @@ const sendTaskEmail = async (recipientEmail, staffName, taskTitle, description =
     // ⭐ UI Configuration based on Item Type
     const headerColor = isIssue ? '#dc2626' : '#4f46e5'; // Red for Issues, Indigo for Tasks
     const label = isTask ? 'Task' : 'Issue';
-    
+
     let subject = "";
     let icon = "";
 
     if (isTask) {
       icon = isMention ? '💬' : '⚠️';
-      subject = isMention 
-        ? `💬 Mentioned in Task: ${taskTitle}` 
+      subject = isMention
+        ? `💬 Mentioned in Task: ${taskTitle}`
         : `📌 New Task Assigned: ${taskTitle}`;
     }
     else if (isIssue) {
       icon = isMention ? '💬' : '📋';
-      subject = isMention 
-        ? `🚨 Mentioned in Issue: ${taskTitle}` 
+      subject = isMention
+        ? `🚨 Mentioned in Issue: ${taskTitle}`
         : `🚩 New Issue Assigned: ${taskTitle}`;
     }
 
     const mailOptions = {
-      from: `"Task Management Portal" <${process.env.EMAIL_USER}>`,
+      from: `"Task Management Portal" <${import.meta.env.EMAIL_USER}>`,
       to: recipientEmail,
       subject: subject,
       attachments: attachments,
@@ -65,9 +65,9 @@ const sendTaskEmail = async (recipientEmail, staffName, taskTitle, description =
             <h2 style="color: #111827; margin-top: 0;">${isMention ? 'New Mention' : `New ${label} Assigned`}</h2>
             <p style="color: #374151; font-size: 16px; line-height: 1.6;">
               Hi <strong>${staffName}</strong>,<br/>
-              ${isMention 
-                ? `You have been mentioned in an <strong>${label.toLowerCase()}</strong> discussion.` 
-                : `A new <strong>${label.toLowerCase()}</strong> has been assigned to you.`}
+              ${isMention
+          ? `You have been mentioned in an <strong>${label.toLowerCase()}</strong> discussion.`
+          : `A new <strong>${label.toLowerCase()}</strong> has been assigned to you.`}
             </p>
             
             <div style="background-color: #f9fafb; padding: 20px; border-radius: 12px; border: 1px solid #e5e7eb; margin: 25px 0;">
@@ -83,7 +83,7 @@ const sendTaskEmail = async (recipientEmail, staffName, taskTitle, description =
             ` : ''}
 
             <div style="margin-top: 30px;">
-              <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/${isTask ? 'tasks' : 'issues'}" 
+              <a href="${import.meta.env.FRONTEND_URL || 'http://localhost:3000'}/${isTask ? 'tasks' : 'issues'}" 
                  style="display: inline-block; padding: 14px 28px; background-color: ${headerColor}; color: #ffffff; text-decoration: none; border-radius: 10px; font-weight: bold; font-size: 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
                 View ${label}
               </a>

@@ -7,7 +7,7 @@ require('dotenv').config();
  */
 const requestMail = async ({ to, templateType, data }) => {
   try {
-    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+    if (!import.meta.env.EMAIL_USER || !import.meta.env.EMAIL_PASS) {
       console.error("🔴 EMAIL CANCELLED: Missing EMAIL_USER or EMAIL_PASS in .env file.");
       return;
     }
@@ -15,8 +15,8 @@ const requestMail = async ({ to, templateType, data }) => {
     const transporter = nodemailer.createTransport({
       service: 'gmail',
       auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
+        user: import.meta.env.EMAIL_USER,
+        pass: import.meta.env.EMAIL_PASS,
       },
     });
 
@@ -85,7 +85,7 @@ const requestMail = async ({ to, templateType, data }) => {
     }
 
     const mailOptions = {
-      from: `"Task Manager Admin" <${process.env.EMAIL_USER}>`,
+      from: `"Task Manager Admin" <${import.meta.env.EMAIL_USER}>`,
       to: to,
       subject: subject,
       html: htmlContent,

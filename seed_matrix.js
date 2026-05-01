@@ -8,8 +8,8 @@ dotenv.config();
 const seedMatrix = async () => {
   try {
     console.log("Connecting to Database...");
-    await mongoose.connect(process.env.MONGO_URI);
-    
+    await mongoose.connect(import.meta.env.MONGO_URI);
+
     // 1. Clear Old Data to ensure a fresh start
     await Permission.deleteMany({});
     await Role.deleteMany({});
@@ -18,18 +18,18 @@ const seedMatrix = async () => {
     // 2. Define Resources and Actions
     const resources = ['tasks', 'staff', 'roles'];
     const actions = ['read', 'create', 'update', 'delete'];
-    
+
     let allPerms = [];
 
     // 3. Generate Permissions (e.g., tasks_read, staff_create)
     for (const res of resources) {
-        for (const act of actions) {
-            allPerms.push({
-                name: `${res.charAt(0).toUpperCase() + res.slice(1)} ${act.charAt(0).toUpperCase() + act.slice(1)}`, 
-                value: `${res}_${act}`, // Code-friendly value (e.g., tasks_read)
-                group: res 
-            });
-        }
+      for (const act of actions) {
+        allPerms.push({
+          name: `${res.charAt(0).toUpperCase() + res.slice(1)} ${act.charAt(0).toUpperCase() + act.slice(1)}`,
+          value: `${res}_${act}`, // Code-friendly value (e.g., tasks_read)
+          group: res
+        });
+      }
     }
 
     // Insert all generated permissions into the DB
@@ -37,29 +37,29 @@ const seedMatrix = async () => {
     (`✅ Created ${createdPerms.length} permissions.`);
 
     // 4. Create Roles and Assign Permissions
-    
+
     const adminPerms = createdPerms.map(p => p._id);
-    
-    const staffPerms = createdPerms.filter(p => 
-        (p.value.startsWith('tasks_') && !p.value.includes('delete')) || // Staff: Create/Read/Update Tasks
-        (p.value === 'staff_read') // Staff: Can see the Staff List but not Edit/Delete
+
+    const staffPerms = createdPerms.filter(p =>
+      (p.value.startsWith('tasks_') && !p.value.includes('delete')) || // Staff: Create/Read/Update Tasks
+      (p.value === 'staff_read') // Staff: Can see the Staff List but not Edit/Delete
     ).map(p => p._id);
 
     // Create the Role documents
     // The 'name' must match the 'role' field in your User model
     await Role.create([
-      { 
-        name: 'admin', 
-        permissions: adminPerms 
+      {
+        name: 'admin',
+        permissions: adminPerms
       },
-      { 
-        name: 'staff', 
-        permissions: staffPerms 
+      {
+        name: 'staff',
+        permissions: staffPerms
       }
     ]);
 
     console.log("✅ Roles 'admin' and 'staff' seeded successfully.");
-    
+
     process.exit();
   } catch (err) {
     console.error("❌ Seeding Error:", err);

@@ -8,21 +8,21 @@ dotenv.config();
 const fixAdmin = async () => {
   try {
     console.log("🔌 Connecting to DB...");
-    await mongoose.connect(process.env.MONGO_URI);
-    
+    await mongoose.connect(import.meta.env.MONGO_URI);
+
     // 1. Get ALL Permissions
     const allPerms = await Permission.find({});
     if (allPerms.length === 0) {
-        console.log("❌ No permissions found! Run your seeder first.");
-        process.exit();
+      console.log("❌ No permissions found! Run your seeder first.");
+      process.exit();
     }
     const allPermIds = allPerms.map(p => p._id);
 
     // 2. Find Admin Role
     const adminRole = await Role.findOne({ name: 'admin' });
     if (!adminRole) {
-        console.log("❌ Admin role not found!");
-        process.exit();
+      console.log("❌ Admin role not found!");
+      process.exit();
     }
 
     // 3. Update Admin to have EVERYTHING
@@ -31,7 +31,7 @@ const fixAdmin = async () => {
 
     ("✅ SUCCESS: Admin role now has ALL permissions.");
 
-    
+
     process.exit();
   } catch (err) {
     console.error(err);
